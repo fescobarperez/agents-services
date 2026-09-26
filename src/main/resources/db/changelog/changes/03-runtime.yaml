@@ -1,0 +1,100 @@
+# Ejecucion: conversaciones, turnos, mensajes y auditoria.
+databaseChangeLog:
+
+  - changeSet:
+      id: 020-conversations
+      author: stackline
+      changes:
+        - createTable:
+            tableName: conversations
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: channel_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_conversations_channel, references: 'channels(id)' } }
+              - column: { name: tenant_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: external_ref, type: VARCHAR(180), constraints: { nullable: false } }
+              - column: { name: agent_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_conversations_agent, references: 'ai_agents(id)' } }
+              - column: { name: state, type: JSONB, defaultValueComputed: "'{}'::jsonb", constraints: { nullable: false } }
+              - column: { name: window_expires_at, type: TIMESTAMPTZ }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addUniqueConstraint:
+            tableName: conversations
+            columnNames: channel_id, external_ref
+            constraintName: uq_conversations_channel_ref
+      rollback:
+        - dropTable: { tableName: conversations }
+
+  # Un turno por llamada al endpoint. Existe aparte de agent_runs porque un
+  # turno que falla ANTES de llegar al modelo tambien necesita turn_id, y
+  # porque aqui vive la idempotencia.
+  - changeSet:
+      id: 021-agent-turns
+      author: stackline
+      changes:
+        - createTable:
+            tableName: agent_turns
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: conversation_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_turns_conversation, references: 'conversations(id)' } }
+              - column: { name: idempotency_key, type: VARCHAR(180), constraints: { nullable: false, unique: true } }
+              - column: { name: status, type: VARCHAR(20), defaultValue: pending, constraints: { nullable: false } }
+              - column: { name: response, type: JSONB }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: completed_at, type: TIMESTAMPTZ }
+        - sql:
+            sql: ALTER TABLE agent_turns ADD CONSTRAINT ck_turns_status CHECK (status IN ('pending', 'running', 'done', 'failed', 'escalated'))
+      rollback:
+        - dropTable: { tableName: agent_turns }
+
+  # external_id es el wamid. Unico para que un reintento del webhook no
+  # duplique el mensaje; nullable porque los salientes aun no tienen id.
+  # En Postgres un UNIQUE admite varios NULL, que es justo lo que hace falta.
+  - changeSet:
+      id: 022-messages
+      author: stackline
+      changes:
+        - createTable:
+            tableName: messages
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: conversation_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_messages_conversation, references: 'conversations(id)' } }
+              - column: { name: turn_id, type: BIGINT, constraints: { foreignKeyName: fk_messages_turn, references: 'agent_turns(id)' } }
+              - column: { name: external_id, type: VARCHAR(180), constraints: { unique: true } }
+              - column: { name: direction, type: VARCHAR(10), constraints: { nullable: false } }
+              - column: { name: body, type: TEXT }
+              - column: { name: tool_calls, type: JSONB }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: ALTER TABLE messages ADD CONSTRAINT ck_messages_direction CHECK (direction IN ('in', 'out'))
+        - createIndex:
+            tableName: messages
+            indexName: ix_messages_conversation
+            columns:
+              - column: { name: conversation_id }
+              - column: { name: created_at, descending: true }
+      rollback:
+        - dropTable: { tableName: messages }
+
+  # Se registra CADA turno que llega al modelo, incluidos los fallidos.
+  - changeSet:
+      id: 023-agent-runs
+      author: stackline
+      changes:
+        - createTable:
+            tableName: agent_runs
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: turn_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_runs_turn, references: 'agent_turns(id)' } }
+              - column: { name: conversation_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_runs_conversation, references: 'conversations(id)' } }
+              - column: { name: agent_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_runs_agent, references: 'ai_agents(id)' } }
+              - column: { name: model_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_runs_model, references: 'ai_models(id)' } }
+              - column: { name: prompt_version_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_runs_prompt, references: 'ai_prompt_versions(id)' } }
+              - column: { name: tokens_in, type: INT, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: tokens_cached, type: INT, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: tokens_out, type: INT, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: tools_called, type: JSONB }
+              - column: { name: latency_ms, type: INT }
+              - column: { name: fallback_used, type: BOOLEAN, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+      rollback:
+        - dropTable: { tableName: agent_runs }

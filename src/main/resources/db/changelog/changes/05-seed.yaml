@@ -1,0 +1,133 @@
+# Datos semilla: lo minimo para que el servicio resuelva un contexto completo.
+# Los nombres de modelo son un punto de partida; cambiarlos es un UPDATE.
+databaseChangeLog:
+
+  - changeSet:
+      id: 040-seed-provider
+      author: stackline
+      changes:
+        - insert:
+            tableName: ai_providers
+            columns:
+              - column: { name: code, value: openai }
+              - column: { name: base_url, value: 'https://api.openai.com/v1' }
+              - column: { name: auth_type, value: bearer }
+              - column: { name: credential_ref, value: OPENAI_API_KEY }
+      rollback:
+        - delete: { tableName: ai_providers, where: "code = 'openai'" }
+
+  - changeSet:
+      id: 041-seed-models
+      author: stackline
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_models (provider_id, model_name, context_window,
+                                     input_cost_1k, output_cost_1k, supports_tools, supports_cache)
+              SELECT p.id, 'gpt-4o', 128000, 0.0025, 0.0100, true, true FROM ai_providers p WHERE p.code = 'openai';
+              INSERT INTO ai_models (provider_id, model_name, context_window,
+                                     input_cost_1k, output_cost_1k, supports_tools, supports_cache)
+              SELECT p.id, 'gpt-4o-mini', 128000, 0.00015, 0.00060, false, true FROM ai_providers p WHERE p.code = 'openai';
+      rollback:
+        - sql:
+            sql: DELETE FROM ai_models WHERE model_name IN ('gpt-4o', 'gpt-4o-mini');
+
+  - changeSet:
+      id: 042-seed-prompts
+      author: stackline
+      changes:
+        - insert:
+            tableName: ai_prompt_versions
+            columns:
+              - column: { name: agent_code, value: ventas }
+              - column: { name: version, valueNumeric: 1 }
+              - column: { name: created_by, value: seed }
+              - column: { name: body, value: "Eres el asistente de ventas de la empresa. Respondes en el idioma del cliente, breve y concreto. Consultas productos y precios con las herramientas disponibles; nunca los inventas. Antes de emitir una cotizacion muestras un resumen y esperas confirmacion explicita." }
+        - insert:
+            tableName: ai_prompt_versions
+            columns:
+              - column: { name: agent_code, value: resumen }
+              - column: { name: version, valueNumeric: 1 }
+              - column: { name: created_by, value: seed }
+              - column: { name: body, value: "Reescribe el estado de la conversacion en maximo 120 palabras. Conserva decisiones, acuerdos y pendientes. No inventes datos ni repitas cifras: esas viven en las entidades." }
+      rollback:
+        - sql:
+            sql: DELETE FROM ai_prompt_versions WHERE agent_code IN ('ventas', 'resumen') AND version = 1;
+
+  - changeSet:
+      id: 043-seed-agents
+      author: stackline
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agents (code, model_id, fallback_model_id, prompt_version_id,
+                                     temperature, max_tool_loops, response_timeout_ms)
+              SELECT 'ventas',
+                     (SELECT id FROM ai_models WHERE model_name = 'gpt-4o'),
+                     (SELECT id FROM ai_models WHERE model_name = 'gpt-4o-mini'),
+                     (SELECT id FROM ai_prompt_versions WHERE agent_code = 'ventas' AND version = 1),
+                     0.20, 5, 30000;
+              -- El agente de resumen no usa herramientas ni necesita fallback:
+              -- si falla, el turno sigue con el resumen anterior.
+              INSERT INTO ai_agents (code, model_id, fallback_model_id, prompt_version_id,
+                                     temperature, max_tool_loops, response_timeout_ms)
+              SELECT 'resumen',
+                     (SELECT id FROM ai_models WHERE model_name = 'gpt-4o-mini'),
+                     NULL,
+                     (SELECT id FROM ai_prompt_versions WHERE agent_code = 'resumen' AND version = 1),
+                     0.00, 0, 15000;
+      rollback:
+        - sql:
+            sql: DELETE FROM ai_agents WHERE code IN ('ventas', 'resumen');
+
+  - changeSet:
+      id: 044-seed-agent-tools
+      author: stackline
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve, max_amount)
+              SELECT a.id, t.patron, t.modo, t.auto, t.tope
+              FROM ai_agents a,
+                   (VALUES ('productos.search', 'read',  true,  NULL),
+                           ('productos.stock',  'read',  true,  NULL),
+                           ('clientes.find',    'read',  true,  NULL),
+                           ('empresa.get',      'read',  true,  NULL),
+                           ('cotizaciones.preview', 'read',  true, NULL),
+                           ('cotizaciones.issue',   'write', false, 25000.00)
+                   ) AS t(patron, modo, auto, tope)
+              WHERE a.code = 'ventas';
+      rollback:
+        - sql:
+            sql: DELETE FROM ai_agent_tools WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas');
+
+  - changeSet:
+      id: 045-seed-channel
+      author: stackline
+      changes:
+        - insert:
+            tableName: channels
+            columns:
+              - column: { name: kind, value: whatsapp }
+              - column: { name: account_ref, value: 'wa:pruebas' }
+              - column: { name: capabilities, value: '{"buttons": 3, "markdown": false, "max_chars": 4096, "streaming": false}' }
+        - insert:
+            tableName: agent_tenant_policies
+            columns:
+              - column: { name: tenant_id, valueNumeric: 1 }
+              - column: { name: is_enabled, valueBoolean: true }
+              - column: { name: quote_limit, valueNumeric: 25000.00 }
+              - column: { name: tone, value: cercano }
+              - column: { name: locale, value: es-GT }
+        - sql:
+            sql: |
+              INSERT INTO channel_agents (channel_id, tenant_id, agent_id, priority)
+              SELECT c.id, 1, a.id, 100
+              FROM channels c, ai_agents a
+              WHERE c.account_ref = 'wa:pruebas' AND a.code = 'ventas';
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM channel_agents WHERE tenant_id = 1;
+              DELETE FROM agent_tenant_policies WHERE tenant_id = 1;
+              DELETE FROM channels WHERE account_ref = 'wa:pruebas';

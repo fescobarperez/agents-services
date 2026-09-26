@@ -1,0 +1,197 @@
+package com.erp_maya.agent.api.service
+
+import com.erp_maya.agent.api.dto.AgentEvent
+import com.erp_maya.agent.api.dto.TokenUsage
+import com.erp_maya.agent.api.dto.TurnRequest
+import com.erp_maya.agent.api.dto.TurnResponse
+import com.erp_maya.agent.api.dto.TurnState
+import com.erp_maya.agent.api.security.CallerCredentials
+import com.erp_maya.agent.context.domain.Capabilities
+import com.erp_maya.agent.context.domain.ExecutionContext
+import com.erp_maya.agent.context.service.ExecutionContextResolver
+import com.erp_maya.agent.conversation.domain.AgentTurn
+import com.erp_maya.agent.conversation.domain.TurnInProgressException
+import com.erp_maya.agent.conversation.domain.TurnStatus
+import com.erp_maya.agent.conversation.service.ConversationService
+import com.erp_maya.agent.model.repository.AgentRunRepository
+import com.erp_maya.agent.tools.service.ConfirmationDetector
+import com.erp_maya.agent.prompt.domain.SessionState
+import com.erp_maya.agent.prompt.service.PromptBuilder
+import com.erp_maya.agent.summary.service.ConversationSummarizer
+import io.micronaut.serde.ObjectMapper
+import jakarta.inject.Singleton
+import org.slf4j.LoggerFactory
+
+/**
+ * Orquesta un turno: credencial → contexto → conversacion → prompt → modelo.
+ *
+ * No es transaccional a proposito. Cada paso persiste por su cuenta para que
+ * un fallo a mitad no borre el rastro de que el turno existio.
+ */
+@Singleton
+open class AgentTurnService(
+    private val resolver: ExecutionContextResolver,
+    private val conversaciones: ConversationService,
+    private val promptBuilder: PromptBuilder,
+    private val loop: AgentLoop,
+    private val confirmaciones: ConfirmationDetector,
+    private val corridas: AgentRunRepository,
+    private val resumidor: ConversationSummarizer,
+    private val json: ObjectMapper,
+) {
+
+    open fun handle(request: TurnRequest, caller: CallerCredentials): TurnResponse {
+        // La empresa sale de la credencial si la trae; si no, de la cuenta del
+        // canal. En ningun caso del cuerpo de la peticion.
+        val contexto = resolver.resolve(request.conversationRef.account, caller.tenantId)
+
+        val conversacion = conversaciones.abrirConversacion(contexto, request.conversationRef.externalId)
+        val turno = conversaciones.abrirTurno(conversacion.id, request.idempotencyKey)
+
+        // Solo ejecuta quien gano el INSERT de la llave de idempotencia.
+        if (!turno.claimedHere) return reenviar(turno)
+
+        conversaciones.enEjecucion(turno.id)
+        // El wamid llega como idempotency_key; para el widget del ERP es un id
+        // que genera el cliente. En ambos casos identifica el mensaje entrante.
+        conversaciones.registrarEntrante(
+            conversacion.id, turno.id, request.idempotencyKey, request.input.text,
+        )
+
+        return try {
+            ejecutar(request, contexto, conversacion.id, turno.id)
+        } catch (e: Exception) {
+            conversaciones.fallar(turno.id, TurnStatus.FAILED, e.message ?: e.javaClass.simpleName)
+            throw e
+        }
+    }
+
+    private fun ejecutar(
+        request: TurnRequest,
+        contexto: ExecutionContext,
+        conversationId: Long,
+        turnId: Long,
+    ): TurnResponse {
+        val capacidades = capacidadesEfectivas(request, contexto)
+
+        // El resumen se refresca ANTES de armar el prompt: asi el turno actual
+        // ya lo aprovecha y, sobre todo, se reescribe mientras los mensajes
+        // viejos siguen dentro de la ventana en vez de despues de perderlos.
+        val estado = resumidor.refrescarSiHaceFalta(conversationId, leerEstado(conversationId))
+
+        // La ventana excluye el mensaje recien guardado para no duplicarlo: va
+        // aparte, al final, como el disparador del turno.
+        val recientes = conversaciones.recientes(conversationId, PromptBuilder.VENTANA + 1)
+            .filterNot { it.body == request.input.text && it.direction.sql == "in" }
+
+        val prompt = promptBuilder.build(contexto, estado, recientes, request.input.text)
+
+        // La confirmacion se decide aqui y se le pasa a la compuerta ya
+        // resuelta: interpretar un "si" a partir de texto libre no es algo que
+        // deba improvisar el codigo que autoriza una emision.
+        val confirmado = confirmaciones.isConfirmation(request.input.text)
+
+        val salida = loop.run(
+            contexto = contexto,
+            conversationId = conversationId,
+            prompt = prompt,
+            estado = estado,
+            confirmado = confirmado,
+            idempotencyKey = request.idempotencyKey,
+        )
+
+        // Se audita SIEMPRE, con el modelo que de verdad respondio y no con el
+        // que decia la configuracion: si entro el respaldo, eso es lo que hay
+        // que poder ver despues.
+        corridas.record(
+            turnId = turnId,
+            conversationId = conversationId,
+            agentId = contexto.agent.id,
+            modelId = salida.modelId,
+            promptVersionId = contexto.prompt.id,
+            usage = salida.usage,
+            toolsCalledJson = salida.toolsCalled.takeIf { it.isNotEmpty() }
+                ?.let { json.writeValueAsString(it) },
+            latencyMs = salida.latencyMs,
+            fallbackUsed = salida.fallbackUsed,
+        )
+
+        val texto = recortar(salida.text, capacidades.maxChars)
+
+        val respuesta = TurnResponse(
+            conversationId = idConversacion(conversationId),
+            turnId = AgentTurn.publicId(turnId),
+            events = listOf(AgentEvent.Text(texto)),
+            state = TurnState(summaryVersion = estado.summaryVersion),
+            usage = TokenUsage(
+                input = salida.usage.input,
+                cached = salida.usage.cached,
+                output = salida.usage.output,
+            ),
+        )
+
+        conversaciones.registrarSaliente(conversationId, turnId, texto)
+        // El pendiente de escritura se persiste con el estado: la compuerta lo
+        // exigira en el turno siguiente y tiene que sobrevivir a un reinicio.
+        conversaciones.guardarEstado(
+            conversationId,
+            json.writeValueAsString(estado.copy(turn = estado.turn + 1, pendingWrite = salida.pendingWrite)),
+        )
+        conversaciones.completar(
+            turnId,
+            json.writeValueAsString(respuesta),
+        )
+        if (salida.escalation != null) {
+            conversaciones.fallar(turnId, TurnStatus.ESCALATED, salida.escalation)
+        }
+
+        log.info(
+            "turno tenant={} conversation={} turn={} modelo={} fallback={} tools={} tokens={}/{} {}ms{}",
+            contexto.tenantId, respuesta.conversationId, respuesta.turnId,
+            salida.modelName, salida.fallbackUsed, salida.toolsCalled,
+            salida.usage.input, salida.usage.output, salida.latencyMs,
+            salida.escalation?.let { " ESCALADO: $it" } ?: "",
+        )
+        return respuesta
+    }
+
+    /**
+     * Misma llave, misma respuesta. Si el primer turno sigue corriendo no se
+     * espera ni se ejecuta de nuevo: ejecutar dos veces significa cobrar los
+     * tokens dos veces y, si el turno emite una cotizacion, emitirla dos veces.
+     */
+    private fun reenviar(turno: AgentTurn): TurnResponse {
+        val guardada = turno.response
+        if (turno.status != TurnStatus.DONE || guardada == null) {
+            throw TurnInProgressException(AgentTurn.publicId(turno.id))
+        }
+        log.info("turno {} reenviado desde la respuesta guardada", AgentTurn.publicId(turno.id))
+        return requireNotNull(json.readValue(guardada, TurnResponse::class.java)) {
+            "La respuesta guardada del turno ${turno.id} no se pudo releer"
+        }
+    }
+
+    /** Un estado ilegible no puede tumbar el turno: se arranca de cero. */
+    private fun leerEstado(conversationId: Long): SessionState =
+        runCatching {
+            json.readValue(conversaciones.leerEstado(conversationId), SessionState::class.java)
+        }.getOrNull() ?: SessionState()
+
+    /**
+     * Lo que el canal declara en el turno gana sobre lo configurado: la version
+     * de la app del cliente cambia mas rapido que la fila en `channels`.
+     */
+    private fun capacidadesEfectivas(request: TurnRequest, contexto: ExecutionContext): Capabilities =
+        request.capabilities?.let {
+            Capabilities(it.buttons, it.markdown, it.maxChars, it.streaming)
+        } ?: contexto.channel.capabilities
+
+    private fun idConversacion(id: Long) = "cnv_%08d".format(id)
+
+    private fun recortar(texto: String, maximo: Int) =
+        if (texto.length <= maximo) texto else texto.take(maximo - 1) + "…"
+
+    private companion object {
+        private val log = LoggerFactory.getLogger(AgentTurnService::class.java)
+    }
+}

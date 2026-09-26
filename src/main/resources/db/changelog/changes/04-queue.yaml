@@ -1,0 +1,40 @@
+# Cola de entrada respaldada en Postgres.
+#
+# El webhook responde 200 en menos de 5 s y encola. Si la cola viviera en
+# memoria, un reinicio perderia mensajes por los que Meta ya recibio 200 y que
+# por lo tanto nunca reintentara.
+databaseChangeLog:
+
+  - changeSet:
+      id: 030-inbound-events
+      author: stackline
+      changes:
+        - createTable:
+            tableName: inbound_events
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: channel_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_inbound_channel, references: 'channels(id)' } }
+              # Unico: deduplica los reintentos del webhook antes de tocar nada mas.
+              - column: { name: external_id, type: VARCHAR(180), constraints: { nullable: false, unique: true } }
+              - column: { name: sender_ref, type: VARCHAR(180), constraints: { nullable: false } }
+              - column: { name: payload, type: JSONB, constraints: { nullable: false } }
+              - column: { name: status, type: VARCHAR(20), defaultValue: pending, constraints: { nullable: false } }
+              - column: { name: attempts, type: INT, defaultValueNumeric: 0, constraints: { nullable: false } }
+              # Agrupa rafagas: se encola a now()+3s y lo que llegue del mismo
+              # remitente dentro de esa ventana se procesa en un solo turno.
+              - column: { name: available_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: locked_by, type: VARCHAR(80) }
+              - column: { name: locked_at, type: TIMESTAMPTZ }
+              - column: { name: last_error, type: TEXT }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: ALTER TABLE inbound_events ADD CONSTRAINT ck_inbound_status CHECK (status IN ('pending', 'processing', 'done', 'failed'))
+        # Por aqui entra el SELECT ... FOR UPDATE SKIP LOCKED del consumidor.
+        - createIndex:
+            tableName: inbound_events
+            indexName: ix_inbound_pendientes
+            columns:
+              - column: { name: status }
+              - column: { name: available_at }
+      rollback:
+        - dropTable: { tableName: inbound_events }

@@ -1,0 +1,116 @@
+# Configuracion de IA. Todo esto es dato, no codigo: cambiar de modelo es un
+# UPDATE, no un despliegue.
+databaseChangeLog:
+
+  # El proveedor guarda DONDE y COMO autenticarse, nunca CON QUE.
+  # `credential_ref` es el nombre de la variable de entorno o de la clave en el
+  # gestor de secretos; el valor se resuelve en ejecucion. Una API key en la
+  # base se filtra en cada respaldo y en cada volcado a pruebas.
+  - changeSet:
+      id: 001-ai-providers
+      author: stackline
+      changes:
+        - createTable:
+            tableName: ai_providers
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: code, type: VARCHAR(40), constraints: { nullable: false, unique: true } }
+              - column: { name: base_url, type: VARCHAR(300), constraints: { nullable: false } }
+              - column: { name: auth_type, type: VARCHAR(30), defaultValue: bearer, constraints: { nullable: false } }
+              - column: { name: credential_ref, type: VARCHAR(120), constraints: { nullable: false } }
+              - column: { name: default_headers, type: JSONB }
+              - column: { name: is_active, type: BOOLEAN, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - setTableRemarks:
+            tableName: ai_providers
+            remarks: Proveedores de modelos. credential_ref es el NOMBRE del secreto, jamas su valor.
+      rollback:
+        - dropTable: { tableName: ai_providers }
+
+  - changeSet:
+      id: 002-ai-models
+      author: stackline
+      changes:
+        - createTable:
+            tableName: ai_models
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: provider_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_ai_models_provider, references: 'ai_providers(id)' } }
+              - column: { name: model_name, type: VARCHAR(120), constraints: { nullable: false } }
+              - column: { name: context_window, type: INT, constraints: { nullable: false } }
+              - column: { name: input_cost_1k, type: 'NUMERIC(10,6)', defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: output_cost_1k, type: 'NUMERIC(10,6)', defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: supports_tools, type: BOOLEAN, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: supports_cache, type: BOOLEAN, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: is_active, type: BOOLEAN, defaultValueBoolean: true, constraints: { nullable: false } }
+        - addUniqueConstraint:
+            tableName: ai_models
+            columnNames: provider_id, model_name
+            constraintName: uq_ai_models_provider_name
+      rollback:
+        - dropTable: { tableName: ai_models }
+
+  # Inmutable: una version de prompt nunca se actualiza, se inserta otra. Asi
+  # un agent_run de hace un mes sigue apuntando al texto exacto que se uso.
+  - changeSet:
+      id: 003-ai-prompt-versions
+      author: stackline
+      changes:
+        - createTable:
+            tableName: ai_prompt_versions
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: agent_code, type: VARCHAR(60), constraints: { nullable: false } }
+              - column: { name: version, type: INT, constraints: { nullable: false } }
+              - column: { name: body, type: TEXT, constraints: { nullable: false } }
+              - column: { name: created_by, type: VARCHAR(120) }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addUniqueConstraint:
+            tableName: ai_prompt_versions
+            columnNames: agent_code, version
+            constraintName: uq_prompt_agent_version
+      rollback:
+        - dropTable: { tableName: ai_prompt_versions }
+
+  - changeSet:
+      id: 004-ai-agents
+      author: stackline
+      changes:
+        - createTable:
+            tableName: ai_agents
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: code, type: VARCHAR(60), constraints: { nullable: false, unique: true } }
+              - column: { name: model_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_ai_agents_model, references: 'ai_models(id)' } }
+              - column: { name: fallback_model_id, type: BIGINT, constraints: { foreignKeyName: fk_ai_agents_fallback, references: 'ai_models(id)' } }
+              - column: { name: prompt_version_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_ai_agents_prompt, references: 'ai_prompt_versions(id)' } }
+              - column: { name: temperature, type: 'NUMERIC(3,2)', defaultValueNumeric: 0.20, constraints: { nullable: false } }
+              - column: { name: max_tool_loops, type: INT, defaultValueNumeric: 5, constraints: { nullable: false } }
+              - column: { name: response_timeout_ms, type: INT, defaultValueNumeric: 30000, constraints: { nullable: false } }
+              - column: { name: is_active, type: BOOLEAN, defaultValueBoolean: true, constraints: { nullable: false } }
+      rollback:
+        - dropTable: { tableName: ai_agents }
+
+  # mode='write' es lo que dispara la compuerta de escritura. max_amount nulo
+  # significa "sin tope propio": manda el quote_limit de la empresa.
+  - changeSet:
+      id: 005-ai-agent-tools
+      author: stackline
+      changes:
+        - createTable:
+            tableName: ai_agent_tools
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: agent_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_agent_tools_agent, references: 'ai_agents(id)' } }
+              - column: { name: tool_pattern, type: VARCHAR(120), constraints: { nullable: false } }
+              - column: { name: mode, type: VARCHAR(10), constraints: { nullable: false } }
+              - column: { name: auto_approve, type: BOOLEAN, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: max_amount, type: 'NUMERIC(14,2)' }
+        - addUniqueConstraint:
+            tableName: ai_agent_tools
+            columnNames: agent_id, tool_pattern
+            constraintName: uq_agent_tools_pattern
+        - sql:
+            sql: ALTER TABLE ai_agent_tools ADD CONSTRAINT ck_agent_tools_mode CHECK (mode IN ('read', 'write'))
+      rollback:
+        - dropTable: { tableName: ai_agent_tools }

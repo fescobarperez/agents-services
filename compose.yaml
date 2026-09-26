@@ -1,0 +1,30 @@
+# Postgres local para desarrollo, cuando se quiere una base que sobreviva a los
+# reinicios. Para correr y para los tests no hace falta: test-resources levanta
+# un Postgres efimero por su cuenta.
+#
+#   docker compose up -d
+#   MICRONAUT_ENVIRONMENTS=dev ./gradlew run
+services:
+  postgres:
+    image: postgres:18.3
+    container_name: agents-postgres
+    environment:
+      POSTGRES_DB: agents
+      POSTGRES_USER: agents
+      # Solo local. En despliegue, variables de entorno o gestor de secretos.
+      POSTGRES_PASSWORD: agents
+    ports:
+      - "5433:5432"   # 5432 puede estar tomado por otra instancia local
+    volumes:
+      # En Postgres 18+ la imagen guarda los datos en un subdirectorio por
+      # version mayor. Montar en /var/lib/postgresql/data hace que el
+      # contenedor se niegue a arrancar; el punto de montaje es el padre.
+      - agents-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agents -d agents"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  agents-pgdata:

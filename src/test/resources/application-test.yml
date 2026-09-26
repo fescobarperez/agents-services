@@ -1,0 +1,6 @@
+micronaut:
+  server:
+    # Puerto aleatorio. Con el 8081 fijo del yml principal, dos clases de test
+    # que levantan servidor chocan entre si —o con el servicio corriendo en la
+    # maquina— y la bateria falla con BindException de forma intermitente.
+    port: -1

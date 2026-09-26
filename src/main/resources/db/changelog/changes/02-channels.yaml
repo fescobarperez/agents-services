@@ -1,0 +1,67 @@
+# Canales y a que agente se asigna cada uno.
+databaseChangeLog:
+
+  # Una fila por CUENTA, no por tipo: dos numeros de WhatsApp son dos filas.
+  - changeSet:
+      id: 010-channels
+      author: stackline
+      changes:
+        - createTable:
+            tableName: channels
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: kind, type: VARCHAR(20), constraints: { nullable: false } }
+              - column: { name: account_ref, type: VARCHAR(120), constraints: { nullable: false, unique: true } }
+              - column: { name: capabilities, type: JSONB, constraints: { nullable: false } }
+              - column: { name: is_active, type: BOOLEAN, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: ALTER TABLE channels ADD CONSTRAINT ck_channels_kind CHECK (kind IN ('whatsapp', 'erp', 'api'))
+      rollback:
+        - dropTable: { tableName: channels }
+
+  # La tabla bisagra: responde "que agente atiende este mensaje".
+  # tenant_id es una referencia externa a maya-erp-services: SIN clave foranea,
+  # porque esa empresa vive en otra base y aqui no se replica.
+  - changeSet:
+      id: 011-channel-agents
+      author: stackline
+      changes:
+        - createTable:
+            tableName: channel_agents
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: channel_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_channel_agents_channel, references: 'channels(id)' } }
+              - column: { name: tenant_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: agent_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_channel_agents_agent, references: 'ai_agents(id)' } }
+              - column: { name: valid_from, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: valid_to, type: TIMESTAMPTZ }
+              - column: { name: priority, type: INT, defaultValueNumeric: 0, constraints: { nullable: false } }
+        # La resolucion del contexto entra por aqui en cada turno.
+        - createIndex:
+            tableName: channel_agents
+            indexName: ix_channel_agents_lookup
+            columns:
+              - column: { name: channel_id }
+              - column: { name: tenant_id }
+              - column: { name: priority, descending: true }
+      rollback:
+        - dropTable: { tableName: channel_agents }
+
+  # SOLO politica del bot. Nada de URLs, credenciales, moneda, impuesto ni
+  # listas de precios: eso es del ERP o del yml.
+  - changeSet:
+      id: 012-agent-tenant-policies
+      author: stackline
+      changes:
+        - createTable:
+            tableName: agent_tenant_policies
+            columns:
+              - column: { name: tenant_id, type: BIGINT, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: is_enabled, type: BOOLEAN, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: quote_limit, type: 'NUMERIC(14,2)' }
+              - column: { name: escalation_user, type: VARCHAR(120) }
+              - column: { name: tone, type: VARCHAR(40) }
+              - column: { name: locale, type: VARCHAR(10), defaultValue: es-GT, constraints: { nullable: false } }
+      rollback:
+        - dropTable: { tableName: agent_tenant_policies }

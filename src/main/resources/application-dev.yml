@@ -1,0 +1,7 @@
+# Perfil para el Postgres de compose.yaml:
+#   docker compose up -d && MICRONAUT_ENVIRONMENTS=dev ./gradlew run
+datasources:
+  default:
+    url: ${DB_URL:`jdbc:postgresql://localhost:5433/agents`}
+    username: ${DB_USER:agents}
+    password: ${DB_PASSWORD:agents}
