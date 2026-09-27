@@ -1,7 +1,23 @@
-# Perfil para el Postgres de compose.yaml:
-#   docker compose up -d && MICRONAUT_ENVIRONMENTS=dev ./gradlew run
+# Perfil de desarrollo local: usa el Postgres del ERP (erp_maya_services) que
+# ya corre en Docker, dentro de un esquema propio. Cada proyecto vive en su
+# esquema; el `public` del ERP no se toca.
+#
+# Una sola vez, antes del primer arranque (Liquibase no crea el esquema):
+#   CREATE SCHEMA IF NOT EXISTS agents_dev;
+#
+# Para correr: MICRONAUT_ENVIRONMENTS=dev y DB_PASSWORD (la del .env del ERP).
+#
+# `currentSchema` fija el search_path de la conexion: las tablas del servicio y
+# las de control de Liquibase quedan en agents_dev. `public` va detras para
+# encontrar extensiones instaladas ahi (p. ej. pgvector).
+#
+# Todo se puede sobreescribir por variable de entorno; el compose.yaml de este
+# repo (Postgres propio en 5433) sigue sirviendo con
+#   DB_URL=jdbc:postgresql://localhost:5433/agents DB_USER=agents DB_PASSWORD=agents
 datasources:
   default:
-    url: ${DB_URL:`jdbc:postgresql://localhost:5433/agents`}
-    username: ${DB_USER:agents}
-    password: ${DB_PASSWORD:agents}
+    url: ${DB_URL:`jdbc:postgresql://localhost:5433/erp_maya?currentSchema=agents_dev`}
+    username: ${DB_USER:erp_maya}
+    # Sin valor por defecto a proposito: si falta, el arranque falla con un
+    # error claro en vez de intentar con una contrasena inventada.
+    password: ${DB_PASSWORD}
