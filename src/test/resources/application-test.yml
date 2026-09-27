@@ -4,3 +4,12 @@ micronaut:
     # que levantan servidor chocan entre si —o con el servicio corriendo en la
     # maquina— y la bateria falla con BindException de forma intermitente.
     port: -1
+
+# Los procesos periodicos no corren solos en los tests: cada test invoca el
+# ciclo cuando lo necesita, y asi no compiten por la cola ni por la base.
+whatsapp:
+  consumer:
+    enabled: false
+agent:
+  summary:
+    job-enabled: false

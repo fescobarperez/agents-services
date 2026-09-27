@@ -14,6 +14,12 @@ import io.micronaut.serde.annotation.Serdeable
 data class SessionState(
     val summary: String? = null,
     val summaryVersion: Int = 0,
+    /**
+     * Id del ultimo mensaje que ya entro al resumen. Lo que venga despues es
+     * lo que falta resumir; de aqui salen los dos disparadores (inactividad y
+     * respaldo por ventana).
+     */
+    val summarizedThrough: Long = 0,
     val entities: Map<String, String> = emptyMap(),
     val turn: Int = 0,
     /**

@@ -10,6 +10,7 @@ import com.erp_maya.agent.context.domain.Capabilities
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.context.service.ExecutionContextResolver
 import com.erp_maya.agent.conversation.domain.AgentTurn
+import com.erp_maya.agent.conversation.domain.Direction
 import com.erp_maya.agent.conversation.domain.TurnInProgressException
 import com.erp_maya.agent.conversation.domain.TurnStatus
 import com.erp_maya.agent.conversation.service.ConversationService
@@ -40,7 +41,16 @@ open class AgentTurnService(
     private val json: ObjectMapper,
 ) {
 
-    open fun handle(request: TurnRequest, caller: CallerCredentials): TurnResponse {
+    /**
+     * @param entrantesRegistrados wamids que ya quedaron en `messages` al
+     * llegar por la cola de WhatsApp. Si viene vacio —el widget del ERP o un
+     * tercero que llaman al endpoint—, el entrante se registra aqui.
+     */
+    open fun handle(
+        request: TurnRequest,
+        caller: CallerCredentials,
+        entrantesRegistrados: List<String> = emptyList(),
+    ): TurnResponse {
         // La empresa sale de la credencial si la trae; si no, de la cuenta del
         // canal. En ningun caso del cuerpo de la peticion.
         val contexto = resolver.resolve(request.conversationRef.account, caller.tenantId)
@@ -52,11 +62,17 @@ open class AgentTurnService(
         if (!turno.claimedHere) return reenviar(turno)
 
         conversaciones.enEjecucion(turno.id)
-        // El wamid llega como idempotency_key; para el widget del ERP es un id
-        // que genera el cliente. En ambos casos identifica el mensaje entrante.
-        conversaciones.registrarEntrante(
-            conversacion.id, turno.id, request.idempotencyKey, request.input.text,
-        )
+        if (entrantesRegistrados.isEmpty()) {
+            // Para el widget del ERP la idempotency_key es un id que genera el
+            // cliente e identifica el mensaje entrante.
+            conversaciones.registrarEntrante(
+                conversacion.id, turno.id, request.idempotencyKey, request.input.text,
+            )
+        } else {
+            // WhatsApp: los mensajes ya se guardaron al llegar, uno por wamid.
+            // Aqui solo se les asigna el turno que los atiende.
+            conversaciones.enlazarEntrantes(conversacion.id, turno.id, entrantesRegistrados)
+        }
 
         return try {
             ejecutar(request, contexto, conversacion.id, turno.id)
@@ -79,10 +95,12 @@ open class AgentTurnService(
         // viejos siguen dentro de la ventana en vez de despues de perderlos.
         val estado = resumidor.refrescarSiHaceFalta(conversationId, leerEstado(conversationId))
 
-        // La ventana excluye el mensaje recien guardado para no duplicarlo: va
-        // aparte, al final, como el disparador del turno.
-        val recientes = conversaciones.recientes(conversationId, PromptBuilder.VENTANA + 1)
-            .filterNot { it.body == request.input.text && it.direction.sql == "in" }
+        // La ventana excluye los entrantes de ESTE turno para no duplicarlos:
+        // van aparte, al final, como el disparador. Se filtra por turno y no
+        // por texto: una rafaga agrupada llega como varios mensajes y un solo
+        // texto unido, y comparar textos dejaria pasar los individuales.
+        val recientes = conversaciones.recientes(conversationId, PromptBuilder.VENTANA + LIMITE_RAFAGA)
+            .filterNot { it.turnId == turnId && it.direction == Direction.IN }
 
         val prompt = promptBuilder.build(contexto, estado, recientes, request.input.text)
 
@@ -193,5 +211,8 @@ open class AgentTurnService(
 
     private companion object {
         private val log = LoggerFactory.getLogger(AgentTurnService::class.java)
+
+        /** Margen de lectura para que una rafaga no le quite lugar a la ventana. */
+        const val LIMITE_RAFAGA = 10
     }
 }

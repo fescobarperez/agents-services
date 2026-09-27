@@ -35,9 +35,27 @@ open class ConversationService(
     open fun abrirTurno(conversationId: Long, idempotencyKey: String): AgentTurn =
         turnos.claim(conversationId, idempotencyKey)
 
-    open fun registrarEntrante(conversationId: Long, turnId: Long, externalId: String?, texto: String?) {
+    open fun registrarEntrante(conversationId: Long, turnId: Long?, externalId: String?, texto: String?) {
         conversaciones.appendMessage(conversationId, turnId, externalId, Direction.IN, texto)
     }
+
+    /** Enlaza al turno los entrantes que se registraron al llegar por la cola. */
+    open fun enlazarEntrantes(conversationId: Long, turnId: Long, externalIds: List<String>) =
+        conversaciones.linkToTurn(conversationId, turnId, externalIds)
+
+    /** Sella en el saliente del turno el id que devolvio el canal al entregarlo. */
+    open fun sellarSaliente(turnId: Long, externalId: String) =
+        conversaciones.sealOutbound(turnId, externalId)
+
+    /** Mensajes posteriores a [despuesDe], para resumir lo que falta. */
+    open fun posteriores(conversationId: Long, despuesDe: Long, limite: Int) =
+        conversaciones.messagesAfter(conversationId, despuesDe, limite)
+
+    open fun mezclarEstado(conversationId: Long, parcialJson: String) =
+        conversaciones.mergeState(conversationId, parcialJson)
+
+    open fun inactivasSinResumir(minutos: Int, limite: Int) =
+        conversaciones.inactiveWithUnsummarized(minutos, limite)
 
     /**
      * El saliente va sin `external_id`: todavia no existe en el canal. Cuando

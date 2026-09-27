@@ -64,13 +64,82 @@ open class ConversationRepository(private val jdbc: JdbcOperations) {
             val rs = stmt.executeQuery()
             val filas = mutableListOf<StoredMessage>()
             while (rs.next()) {
-                filas += StoredMessage(
-                    id = rs.getLong("id"),
-                    direction = if (rs.getString("direction") == "in") Direction.IN else Direction.OUT,
-                    body = rs.getString("body"),
-                )
+                filas += leerMensaje(rs)
             }
             filas.reversed()
+        }
+
+    /**
+     * Enlaza al turno los entrantes que ya se registraron al llegar.
+     *
+     * Solo toca los que aun no tienen turno: un reintento del mismo lote no
+     * los mueve a otro turno.
+     */
+    @Transactional
+    open fun linkToTurn(conversationId: Long, turnId: Long, externalIds: List<String>): Int {
+        if (externalIds.isEmpty()) return 0
+        return jdbc.prepareStatement(SQL_LINK) { stmt ->
+            stmt.setLong(1, turnId)
+            stmt.setLong(2, conversationId)
+            stmt.setArray(3, stmt.connection.createArrayOf("varchar", externalIds.toTypedArray()))
+            stmt.executeUpdate()
+        }
+    }
+
+    /**
+     * Sella en el saliente del turno el id que le dio el canal al entregarlo.
+     * Hasta entonces el saliente no existe alla y va sin `external_id`.
+     */
+    @Transactional
+    open fun sealOutbound(turnId: Long, externalId: String): Int =
+        jdbc.prepareStatement(SQL_SEAL) { stmt ->
+            stmt.setString(1, externalId)
+            stmt.setLong(2, turnId)
+            stmt.executeUpdate()
+        }
+
+    /** Mensajes con id mayor a [afterId], del mas viejo al mas nuevo. */
+    @Transactional
+    open fun messagesAfter(conversationId: Long, afterId: Long, limite: Int): List<StoredMessage> =
+        jdbc.prepareStatement(SQL_AFTER) { stmt ->
+            stmt.setLong(1, conversationId)
+            stmt.setLong(2, afterId)
+            stmt.setInt(3, limite)
+            val rs = stmt.executeQuery()
+            val filas = mutableListOf<StoredMessage>()
+            while (rs.next()) filas += leerMensaje(rs)
+            filas
+        }
+
+    /**
+     * Mezcla claves en el estado sin reescribirlo entero.
+     *
+     * Lo usa el resumen por inactividad, que corre fuera de un turno: si
+     * escribiera el estado completo podria pisar la escritura pendiente que un
+     * turno concurrente acaba de guardar.
+     */
+    @Transactional
+    open fun mergeState(conversationId: Long, parcialJson: String) {
+        jdbc.prepareStatement("UPDATE conversations SET state = state || ?::jsonb WHERE id = ?") { stmt ->
+            stmt.setString(1, parcialJson)
+            stmt.setLong(2, conversationId)
+            stmt.executeUpdate()
+        }
+    }
+
+    /**
+     * Conversaciones sin actividad desde hace [minutos] que tienen mensajes
+     * posteriores a lo ultimo resumido.
+     */
+    @Transactional
+    open fun inactiveWithUnsummarized(minutos: Int, limite: Int): List<Long> =
+        jdbc.prepareStatement(SQL_INACTIVAS) { stmt ->
+            stmt.setInt(1, minutos)
+            stmt.setInt(2, limite)
+            val rs = stmt.executeQuery()
+            val ids = mutableListOf<Long>()
+            while (rs.next()) ids += rs.getLong(1)
+            ids
         }
 
     @Transactional
@@ -98,6 +167,13 @@ open class ConversationRepository(private val jdbc: JdbcOperations) {
             if (rs.next()) rs.getInt(1) else 0
         }
 
+    private fun leerMensaje(rs: ResultSet) = StoredMessage(
+        id = rs.getLong("id"),
+        direction = if (rs.getString("direction") == "in") Direction.IN else Direction.OUT,
+        body = rs.getString("body"),
+        turnId = rs.getLong("turn_id").takeUnless { rs.wasNull() },
+    )
+
     private fun leer(rs: ResultSet) = Conversation(
         id = rs.getLong("id"),
         channelId = rs.getLong("channel_id"),
@@ -123,9 +199,49 @@ open class ConversationRepository(private val jdbc: JdbcOperations) {
 
         /** Descendente para tomar los N ultimos; se invierte al devolver. */
         const val SQL_RECENT = """
-            SELECT id, direction, body FROM messages
+            SELECT id, direction, body, turn_id FROM messages
             WHERE conversation_id = ? AND body IS NOT NULL
             ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        """
+
+        const val SQL_AFTER = """
+            SELECT id, direction, body, turn_id FROM messages
+            WHERE conversation_id = ? AND id > ? AND body IS NOT NULL
+            ORDER BY id
+            LIMIT ?
+        """
+
+        const val SQL_LINK = """
+            UPDATE messages SET turn_id = ?
+            WHERE conversation_id = ? AND external_id = ANY(?) AND turn_id IS NULL
+        """
+
+        /** El primer saliente del turno que todavia no tiene id del canal. */
+        const val SQL_SEAL = """
+            UPDATE messages SET external_id = ?
+            WHERE id = (
+                SELECT id FROM messages
+                WHERE turn_id = ? AND direction = 'out' AND external_id IS NULL
+                ORDER BY id
+                LIMIT 1
+            )
+        """
+
+        /**
+         * `updated_at` lo toca cada entrante (al abrir la conversacion en la
+         * ingesta) y cada turno; el resumen se compara contra el ultimo id
+         * resumido que guarda el estado.
+         */
+        const val SQL_INACTIVAS = """
+            SELECT c.id FROM conversations c
+            WHERE c.updated_at < now() - make_interval(mins => ?)
+              AND EXISTS (
+                  SELECT 1 FROM messages m
+                  WHERE m.conversation_id = c.id AND m.body IS NOT NULL
+                    AND m.id > COALESCE((c.state ->> 'summarizedThrough')::bigint, 0)
+              )
+            ORDER BY c.updated_at
             LIMIT ?
         """
 
