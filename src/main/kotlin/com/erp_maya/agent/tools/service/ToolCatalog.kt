@@ -23,7 +23,7 @@ class ToolCatalog {
         ToolDefinition(
             name = "productos.search",
             mode = ToolMode.READ,
-            description = "Busca productos por nombre, codigo o descripcion.",
+            description = "Busca productos por nombre (el ERP no busca por codigo ni SKU). Usa palabras del nombre.",
             parameters = listOf(
                 ToolParameter("query", "string", true, "Texto a buscar"),
                 ToolParameter("limit", "integer", false, "Maximo de resultados, por defecto 10"),
@@ -40,6 +40,41 @@ class ToolCatalog {
             mode = ToolMode.READ,
             description = "Busca un cliente por su numero de telefono.",
             parameters = listOf(ToolParameter("phone", "string", true, "Telefono del cliente")),
+        ),
+        ToolDefinition(
+            name = "clientes.buscar",
+            mode = ToolMode.READ,
+            description = "Busca clientes por NIT (exacto) o por nombre (parcial). Devuelve id, nombre y NIT. " +
+                "Si te dan NIT y nombre, busca primero por NIT; si no aparece, prueba por nombre.",
+            parameters = listOf(
+                ToolParameter("query", "string", true, "Un NIT o parte del nombre, no ambos juntos"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.cliente",
+            mode = ToolMode.READ,
+            description = "Fija el cliente de la cotizacion en curso (usa el id de clientes.buscar). " +
+                "Si habia productos en espera, crea la cotizacion como prospecto.",
+            parameters = listOf(ToolParameter("customerId", "integer", true, "Id del cliente")),
+        ),
+        ToolDefinition(
+            name = "cotizacion.agregar",
+            mode = ToolMode.READ,
+            description = "Agrega un producto a la cotizacion en curso (queda como prospecto, no se envia). " +
+                "Si ya estaba, suma la cantidad. Si aun no hay cliente, la linea espera y hay que pedirlo.",
+            parameters = listOf(
+                ToolParameter("productId", "integer", true, "Id del producto (de productos.search)"),
+                ToolParameter("quantity", "number", true, "Cantidad"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.cantidad",
+            mode = ToolMode.READ,
+            description = "Cambia la cantidad de una linea de la cotizacion en curso; 0 la elimina.",
+            parameters = listOf(
+                ToolParameter("lineId", "integer", true, "Id de la linea"),
+                ToolParameter("quantity", "number", true, "Nueva cantidad"),
+            ),
         ),
         ToolDefinition(
             name = "empresa.get",

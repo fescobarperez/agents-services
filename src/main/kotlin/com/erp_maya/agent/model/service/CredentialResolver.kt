@@ -17,6 +17,8 @@ class CredentialResolver(private val environment: Environment) {
 
     fun secretFor(provider: AiProvider): String {
         val valor = System.getenv(provider.credentialRef)
+            // Lo que el .env local dejo como propiedad del sistema.
+            ?: System.getProperty(provider.credentialRef)
             ?: environment.getProperty(provider.credentialRef, String::class.java).orElse(null)
 
         if (valor.isNullOrBlank()) {

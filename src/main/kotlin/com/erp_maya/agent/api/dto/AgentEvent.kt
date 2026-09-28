@@ -25,9 +25,13 @@ sealed interface AgentEvent {
     @Serdeable
     data class Text(val text: String) : AgentEvent
 
-    /** `card` nombra la plantilla; `data` son sus campos ya resueltos. */
+    /**
+     * `card` nombra la plantilla; `data` son sus campos ya resueltos y
+     * formateados (montos con moneda, etiquetas de stock): el canal pinta, no
+     * calcula. Puede traer listas, p. ej. `items` en `product_results`.
+     */
     @Serdeable
-    data class Card(val card: String, val data: Map<String, String>) : AgentEvent
+    data class Card(val card: String, val data: Map<String, Any?>) : AgentEvent
 
     /**
      * Opciones para que el usuario escoja. Cuantas caben lo decide el canal

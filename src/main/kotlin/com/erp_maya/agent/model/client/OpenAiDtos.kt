@@ -9,7 +9,8 @@ import io.micronaut.serde.annotation.Serdeable
 data class OpenAiRequest(
     val model: String,
     val messages: List<OpenAiMessage>,
-    val temperature: Double,
+    /** Nula = no se manda: los modelos Claude recientes rechazan el parametro. */
+    @Nullable val temperature: Double? = null,
     @JsonProperty("max_completion_tokens") @Nullable val maxCompletionTokens: Int? = null,
     @Nullable val tools: List<OpenAiTool>? = null,
 )

@@ -2,10 +2,13 @@ package com.erp_maya.agent.erp.client
 
 import com.erp_maya.agent.erp.domain.CompanyInfo
 import com.erp_maya.agent.erp.domain.CustomerSummary
+import com.erp_maya.agent.erp.domain.ErpException
+import com.erp_maya.agent.erp.domain.ErpQuote
 import com.erp_maya.agent.erp.domain.IssuedQuote
 import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.erp.domain.QuotePreview
+import com.erp_maya.agent.erp.domain.QuoteLineWrite
 import com.erp_maya.agent.erp.domain.StockInfo
 import java.math.BigDecimal
 
@@ -50,4 +53,34 @@ interface ErpClient {
     ): IssuedQuote
 
     fun getCompany(tenantId: Long, conversationId: Long): CompanyInfo?
+
+    // ── Borrador de cotizacion (asistente) ──────────────────────────────────
+    // Con cuerpo por defecto para que los dobles de prueba existentes sigan
+    // compilando; la implementacion real esta en ErpHttpClient.
+
+    fun searchCustomers(tenantId: Long, conversationId: Long, query: String, limit: Int = 5): List<CustomerSummary> =
+        throw ErpException("searchCustomers no implementado")
+
+    fun getCustomer(tenantId: Long, conversationId: Long, customerId: Long): CustomerSummary? =
+        throw ErpException("getCustomer no implementado")
+
+    fun getProduct(tenantId: Long, conversationId: Long, productId: Long): ProductSummary? =
+        throw ErpException("getProduct no implementado")
+
+    /** Crea la cotizacion como PROSPECTO del asistente. */
+    fun createProspectQuote(
+        tenantId: Long,
+        conversationId: Long,
+        customer: CustomerSummary,
+        lines: List<QuoteLineWrite>,
+        channel: String,
+        conversationRef: String,
+    ): ErpQuote = throw ErpException("createProspectQuote no implementado")
+
+    fun getQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote? =
+        throw ErpException("getQuote no implementado")
+
+    /** Reemplaza las lineas: las que no vengan se eliminan; sin id son nuevas. */
+    fun updateQuoteLines(tenantId: Long, conversationId: Long, quote: ErpQuote, lines: List<QuoteLineWrite>): ErpQuote =
+        throw ErpException("updateQuoteLines no implementado")
 }

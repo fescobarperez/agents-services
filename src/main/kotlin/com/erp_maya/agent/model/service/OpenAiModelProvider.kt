@@ -21,22 +21,32 @@ import com.erp_maya.agent.model.domain.Role
 import com.erp_maya.agent.model.domain.ToolInvocation
 import com.erp_maya.agent.model.domain.ToolSchema
 import com.erp_maya.agent.model.repository.AiProviderRepository
-import io.micronaut.http.HttpRequest
-import io.micronaut.http.MediaType
 import io.micronaut.serde.ObjectMapper
 import jakarta.inject.Singleton
 import org.slf4j.LoggerFactory
+import java.time.Duration
 
-/** Implementacion para la API de chat de OpenAI. */
-@Singleton
-class OpenAiModelProvider(
+/**
+ * Implementacion para APIs con el formato de chat de OpenAI
+ * (`POST {base_url}/chat/completions`, autenticacion Bearer).
+ *
+ * La URL y la credencial salen de la fila de `ai_providers` cuyo `code` es
+ * [providerCode]; cada proveedor compatible es una subclase de una linea.
+ */
+abstract class OpenAiCompatibleModelProvider(
     private val proveedores: AiProviderRepository,
     private val credenciales: CredentialResolver,
     private val clientes: ProviderHttpClients,
     private val json: ObjectMapper,
 ) : ModelProvider {
 
-    override val providerCode = "openai"
+    abstract override val providerCode: String
+
+    /**
+     * Si el proveedor acepta `temperature`. Los Claude recientes (Sonnet 5,
+     * Opus 5) responden 400 «temperature is deprecated for this model».
+     */
+    protected open val enviaTemperatura: Boolean = true
 
     override fun complete(
         model: ModelRef,
@@ -50,25 +60,43 @@ class OpenAiModelProvider(
         val cuerpo = OpenAiRequest(
             model = model.modelName,
             messages = prompt.messages.map { traducir(it) },
-            temperature = options.temperature.toDouble(),
-            maxCompletionTokens = options.maxTokens,
+            temperature = if (enviaTemperatura) options.temperature.toDouble() else null,
+            // Anthropic exige un tope de salida; OpenAI lo acepta igual.
+            maxCompletionTokens = options.maxTokens ?: MAX_TOKENS_POR_DEFECTO,
             // Solo se declaran si el modelo las soporta: mandarselas a uno que
             // no las entiende es un 400 seguro, y el de resumen no las lleva.
             tools = if (tools.isEmpty() || !model.supportsTools) null else tools.map(::declarar),
         )
 
-        val peticion = HttpRequest.POST("${proveedor.baseUrl}/chat/completions", cuerpo)
-            .bearerAuth(credenciales.secretFor(proveedor))
-            .contentType(MediaType.APPLICATION_JSON)
-
-        val respuesta = try {
-            clientes.forBaseUrl(proveedor.baseUrl).toBlocking().retrieve(peticion, OpenAiResponse::class.java)
+        val url = "${proveedor.baseUrl}/chat/completions"
+        val crudo = try {
+            clientes.postJson(
+                url = url,
+                bearer = credenciales.secretFor(proveedor),
+                json = json.writeValueAsString(cuerpo),
+                timeout = Duration.ofMillis(options.timeoutMs.toLong().coerceAtLeast(1_000)),
+            )
         } catch (e: Exception) {
-            // El mensaje del proveedor puede traer fragmentos del prompt; se
-            // registra el tipo y se deja el detalle para el log de depuracion.
-            log.warn("fallo de {} con {}: {}", providerCode, model.modelName, e.javaClass.simpleName)
+            log.warn("fallo de {} con {}: {} {}", providerCode, model.modelName, e.javaClass.simpleName, e.message)
             log.debug("detalle del fallo del proveedor", e)
             throw ModelCallException("El proveedor '$providerCode' no respondio", e)
+        }
+
+        if (crudo.status !in 200..299) {
+            // El cuerpo de error del proveedor dice que fallo (modelo, llave,
+            // parametro); se recorta porque puede traer fragmentos del prompt.
+            log.warn(
+                "{} respondio {} con {}: {}",
+                providerCode, crudo.status, model.modelName, crudo.body.take(500),
+            )
+            throw ModelCallException("El proveedor '$providerCode' respondio ${crudo.status}")
+        }
+
+        val respuesta = try {
+            requireNotNull(json.readValue(crudo.body, OpenAiResponse::class.java))
+        } catch (e: Exception) {
+            log.warn("respuesta ilegible de {} con {}: {}", providerCode, model.modelName, e.javaClass.simpleName)
+            throw ModelCallException("El proveedor '$providerCode' respondio algo ilegible", e)
         }
 
         val mensaje = respuesta.choices?.firstOrNull()?.message
@@ -93,7 +121,8 @@ class OpenAiModelProvider(
         toolCalls = m.toolCalls.takeIf { it.isNotEmpty() }?.map { inv ->
             OpenAiToolCall(
                 id = inv.id,
-                function = OpenAiFunctionCall(inv.name, json.writeValueAsString(inv.arguments)),
+                // Mismo nombre que se declaro: sin punto, que la API no admite.
+                function = OpenAiFunctionCall(inv.name.replace('.', '_'), json.writeValueAsString(inv.arguments)),
             )
         },
     )
@@ -124,6 +153,39 @@ class OpenAiModelProvider(
     }
 
     private companion object {
-        private val log = LoggerFactory.getLogger(OpenAiModelProvider::class.java)
+        private val log = LoggerFactory.getLogger(OpenAiCompatibleModelProvider::class.java)
+        private const val MAX_TOKENS_POR_DEFECTO = 4096
     }
+}
+
+/** OpenAI. */
+@Singleton
+class OpenAiModelProvider(
+    proveedores: AiProviderRepository,
+    credenciales: CredentialResolver,
+    clientes: ProviderHttpClients,
+    json: ObjectMapper,
+) : OpenAiCompatibleModelProvider(proveedores, credenciales, clientes, json) {
+    override val providerCode = "openai"
+}
+
+/**
+ * Claude por la capa compatible con OpenAI de Anthropic
+ * (`base_url = https://api.anthropic.com/v1`). Sirve para arrancar y probar;
+ * esa capa no aplica prompt caching, asi que para produccion conviene un
+ * proveedor nativo sobre la Messages API.
+ */
+@Singleton
+class AnthropicCompatModelProvider(
+    proveedores: AiProviderRepository,
+    credenciales: CredentialResolver,
+    clientes: ProviderHttpClients,
+    json: ObjectMapper,
+) : OpenAiCompatibleModelProvider(proveedores, credenciales, clientes, json) {
+    override val providerCode = "anthropic"
+
+    // Se omite para todos los modelos de Anthropic: los que aun la aceptan
+    // funcionan bien con su valor por defecto, y asi no hay que llevar una
+    // lista de cuales la rechazan.
+    override val enviaTemperatura = false
 }

@@ -19,6 +19,7 @@ import com.erp_maya.agent.tools.service.ConfirmationDetector
 import com.erp_maya.agent.prompt.domain.SessionState
 import com.erp_maya.agent.prompt.service.PromptBuilder
 import com.erp_maya.agent.summary.service.ConversationSummarizer
+import com.erp_maya.agent.quote.PanelActionService
 import io.micronaut.serde.ObjectMapper
 import jakarta.inject.Singleton
 import org.slf4j.LoggerFactory
@@ -39,6 +40,7 @@ open class AgentTurnService(
     private val corridas: AgentRunRepository,
     private val resumidor: ConversationSummarizer,
     private val json: ObjectMapper,
+    private val acciones: PanelActionService,
 ) {
 
     /**
@@ -66,7 +68,10 @@ open class AgentTurnService(
             // Para el widget del ERP la idempotency_key es un id que genera el
             // cliente e identifica el mensaje entrante.
             conversaciones.registrarEntrante(
-                conversacion.id, turno.id, request.idempotencyKey, request.input.text,
+                conversacion.id, turno.id, request.idempotencyKey,
+                // Una accion del panel no trae texto: se guarda descrita para
+                // que el historial (y el modelo en turnos siguientes) la vea.
+                request.input.text ?: acciones.describir(request.input),
             )
         } else {
             // WhatsApp: los mensajes ya se guardaron al llegar, uno por wamid.
@@ -75,7 +80,11 @@ open class AgentTurnService(
         }
 
         return try {
-            ejecutar(request, contexto, conversacion.id, turno.id)
+            if (request.input.esAccion) {
+                ejecutarAccion(request, contexto, conversacion.id, turno.id)
+            } else {
+                ejecutar(request, contexto, conversacion.id, turno.id)
+            }
         } catch (e: Exception) {
             conversaciones.fallar(turno.id, TurnStatus.FAILED, e.message ?: e.javaClass.simpleName)
             throw e
@@ -139,7 +148,8 @@ open class AgentTurnService(
         val respuesta = TurnResponse(
             conversationId = idConversacion(conversationId),
             turnId = AgentTurn.publicId(turnId),
-            events = listOf(AgentEvent.Text(texto)),
+            // El texto primero y despues las tarjetas: el canal las pinta en ese orden.
+            events = listOf(AgentEvent.Text(texto)) + salida.cards,
             state = TurnState(summaryVersion = estado.summaryVersion),
             usage = TokenUsage(
                 input = salida.usage.input,
@@ -153,7 +163,9 @@ open class AgentTurnService(
         // exigira en el turno siguiente y tiene que sobrevivir a un reinicio.
         conversaciones.guardarEstado(
             conversationId,
-            json.writeValueAsString(estado.copy(turn = estado.turn + 1, pendingWrite = salida.pendingWrite)),
+            json.writeValueAsString(
+                estado.copy(turn = estado.turn + 1, pendingWrite = salida.pendingWrite, borrador = salida.borrador),
+            ),
         )
         conversaciones.completar(
             turnId,
@@ -187,6 +199,39 @@ open class AgentTurnService(
         return requireNotNull(json.readValue(guardada, TurnResponse::class.java)) {
             "La respuesta guardada del turno ${turno.id} no se pudo releer"
         }
+    }
+
+    /**
+     * Un boton del panel. Se resuelve sin el modelo: la intencion ya es
+     * exacta (este SKU, esta linea) y pasarla por el modelo solo añadiria
+     * latencia, costo y la posibilidad de que la reinterprete.
+     */
+    private fun ejecutarAccion(
+        request: TurnRequest,
+        contexto: ExecutionContext,
+        conversationId: Long,
+        turnId: Long,
+    ): TurnResponse {
+        val estado = leerEstado(conversationId)
+        val paso = acciones.ejecutar(contexto, conversationId, idConversacion(conversationId), estado.borrador, request.input)
+
+        val respuesta = TurnResponse(
+            conversationId = idConversacion(conversationId),
+            turnId = AgentTurn.publicId(turnId),
+            events = listOf(AgentEvent.Text(paso.mensaje)) + paso.tarjetas,
+            state = TurnState(summaryVersion = estado.summaryVersion),
+        )
+        conversaciones.registrarSaliente(conversationId, turnId, paso.mensaje)
+        conversaciones.guardarEstado(
+            conversationId,
+            json.writeValueAsString(estado.copy(turn = estado.turn + 1, borrador = paso.borrador)),
+        )
+        conversaciones.completar(turnId, json.writeValueAsString(respuesta))
+        log.info(
+            "accion tenant={} conversation={} turn={} accion={}",
+            contexto.tenantId, respuesta.conversationId, respuesta.turnId, request.input.actionId,
+        )
+        return respuesta
     }
 
     /** Un estado ilegible no puede tumbar el turno: se arranca de cero. */
