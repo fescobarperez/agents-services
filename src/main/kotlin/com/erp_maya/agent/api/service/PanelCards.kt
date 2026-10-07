@@ -26,6 +26,14 @@ object PanelCards {
     const val CUSTOMER = "customer"
     const val QUOTE_PREVIEW = "quote_preview"
 
+    /**
+     * Un gesto de Tino que el modelo decidio mostrar (`tino.sticker`). No es
+     * del panel: solo lo pintan los canales que tienen stickers.
+     */
+    const val EXPRESSION = "expression"
+
+    fun expresion(momento: String) = AgentEvent.Card(card = EXPRESSION, data = mapOf("moment" to momento))
+
     /** Tarjeta para un resultado, o null si esa herramienta no pinta nada. */
     fun desde(resultado: ToolResult.Ok): AgentEvent.Card? = when (resultado.name) {
         "productos.search" -> productos(resultado.data)

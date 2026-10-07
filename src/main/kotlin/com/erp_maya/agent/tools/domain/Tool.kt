@@ -44,7 +44,13 @@ data class ToolCall(
         is BigDecimal -> v
         is Number -> BigDecimal(v.toString())
         is String -> v.toBigDecimalOrNull()
+            ?: NUMERO.find(v)?.value?.replace(',', '.')?.toBigDecimalOrNull()
         else -> null
+    }
+
+    private companion object {
+        /** El primer numero de un texto como "25 unidades" o "2,5 m". */
+        val NUMERO = Regex("\\d+([.,]\\d+)?")
     }
 }
 

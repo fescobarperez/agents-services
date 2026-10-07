@@ -10,6 +10,9 @@ micronaut:
 whatsapp:
   consumer:
     enabled: false
+  # Los tests de la cola cuentan envios exactos: los stickers se prueban aparte.
+  stickers:
+    enabled: false
 agent:
   summary:
     job-enabled: false

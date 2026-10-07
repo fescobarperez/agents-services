@@ -76,6 +76,10 @@ whatsapp:
     enabled: ${WHATSAPP_CONSUMER_ENABLED:true}
     interval: 1s
     batch-size: 20
+  # Stickers animados de Tino (resources/stickers). Cuando enviar uno lo
+  # decide el modelo con la herramienta `tino.sticker`; esto solo los apaga.
+  stickers:
+    enabled: ${WHATSAPP_STICKERS_ENABLED:true}
 
 # Servicio externo. Las rutas concretas aun no estan validadas contra
 # maya-erp-services: van marcadas con TODO en ErpClient.
@@ -85,3 +89,8 @@ erp:
   # Credenciales de maquina (client credentials), nunca un usuario-persona.
   client-id: ${ERP_CLIENT_ID:}
   client-secret: ${ERP_CLIENT_SECRET:}
+  # Fase 1 (WhatsApp, sin usuario logueado): usuario bot del ERP con permisos
+  # minimos. Solo se usa si no hay client credentials.
+  bot-company-code: ${ERP_BOT_COMPANY:}
+  bot-email: ${ERP_BOT_EMAIL:}
+  bot-password: ${ERP_BOT_PASSWORD:}

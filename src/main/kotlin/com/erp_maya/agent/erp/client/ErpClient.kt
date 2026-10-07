@@ -61,6 +61,10 @@ interface ErpClient {
     fun searchCustomers(tenantId: Long, conversationId: Long, query: String, limit: Int = 5): List<CustomerSummary> =
         throw ErpException("searchCustomers no implementado")
 
+    /** Alta de un cliente nuevo (lo pide el asistente cuando nadie tiene ese numero). */
+    fun createCustomer(tenantId: Long, conversationId: Long, name: String, nit: String?, phone: String?): CustomerSummary =
+        throw ErpException("createCustomer no implementado")
+
     fun getCustomer(tenantId: Long, conversationId: Long, customerId: Long): CustomerSummary? =
         throw ErpException("getCustomer no implementado")
 

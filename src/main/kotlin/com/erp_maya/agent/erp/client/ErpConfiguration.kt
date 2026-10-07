@@ -20,4 +20,21 @@ class ErpConfiguration {
     var clientSecret: String? = null
 
     fun hasCredentials(): Boolean = !clientId.isNullOrBlank() && !clientSecret.isNullOrBlank()
+
+    /**
+     * Fase 1, mientras el ERP no expone client credentials: un usuario "bot"
+     * del ERP, con permisos mínimos, que inicia sesión con /api/auth/login.
+     * Lo usan los canales sin usuario (WhatsApp). Siempre por entorno.
+     */
+    @Nullable
+    var botCompanyCode: String? = null
+
+    @Nullable
+    var botEmail: String? = null
+
+    @Nullable
+    var botPassword: String? = null
+
+    fun hasBot(): Boolean =
+        !botCompanyCode.isNullOrBlank() && !botEmail.isNullOrBlank() && !botPassword.isNullOrBlank()
 }

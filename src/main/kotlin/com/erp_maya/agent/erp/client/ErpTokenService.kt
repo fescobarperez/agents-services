@@ -16,6 +16,14 @@ data class TokenRequest(val clientId: String, val clientSecret: String)
 @Serdeable
 data class TokenResponse(val token: String, @Nullable val expiresIn: Long? = null)
 
+/** Cuerpo de POST /api/auth/login del ERP (AuthDtos.LoginRequest). */
+@Serdeable
+data class BotLoginRequest(val companyCode: String, val email: String, val password: String)
+
+/** Respuesta de /api/auth/login: solo interesa el JWT. */
+@Serdeable
+data class BotLoginResponse(val token: String)
+
 /**
  * Token de servicio contra el ERP (fase 1: client credentials).
  *
@@ -41,8 +49,10 @@ open class ErpTokenService(
         cache.get()?.let { if (Instant.now().isBefore(it.expiraEn)) return it.valor }
 
         if (!config.hasCredentials()) {
+            if (config.hasBot()) return tokenDelBot()
             throw ErpException(
-                "Faltan ERP_CLIENT_ID y ERP_CLIENT_SECRET: el servicio no puede autenticarse contra el ERP",
+                "Faltan ERP_CLIENT_ID/ERP_CLIENT_SECRET o ERP_BOT_COMPANY/ERP_BOT_EMAIL/ERP_BOT_PASSWORD: " +
+                    "el servicio no puede autenticarse contra el ERP",
             )
         }
 
@@ -67,6 +77,30 @@ open class ErpTokenService(
         return respuesta.token
     }
 
+    /**
+     * Inicia sesion como el usuario bot y cachea el JWT. El ERP lo emite por
+     * [VIGENCIA_LOGIN] segundos (erp.security.token-expiration); se renueva
+     * con el mismo margen que el token de servicio.
+     */
+    private fun tokenDelBot(): String {
+        val respuesta = try {
+            clientProvider.client().toBlocking().retrieve(
+                HttpRequest.POST(
+                    "${config.baseUrl.trimEnd('/')}$RUTA_LOGIN",
+                    BotLoginRequest(config.botCompanyCode!!, config.botEmail!!, config.botPassword!!),
+                ),
+                BotLoginResponse::class.java,
+            )
+        } catch (e: Exception) {
+            // Sin el detalle: el cuerpo del error podria repetir el correo.
+            throw ErpException("El usuario bot no pudo iniciar sesion en el ERP (${e.javaClass.simpleName})", e)
+        }
+        val expira = Instant.now().plusSeconds(VIGENCIA_LOGIN - MARGEN_SEGUNDOS)
+        cache.set(TokenVigente(respuesta.token, expira))
+        log.info("sesion del usuario bot en el ERP renovada")
+        return respuesta.token
+    }
+
     /** Fuerza la renovacion; se usa cuando el ERP responde 401. */
     open fun invalidate() = cache.set(null)
 
@@ -78,6 +112,11 @@ open class ErpTokenService(
         const val RUTA_TOKEN = "/api/auth/token"
 
         const val VIGENCIA_POR_DEFECTO = 900L
+
+        /** Login del usuario bot (fase 1). */
+        const val RUTA_LOGIN = "/api/auth/login"
+        /** Vigencia del JWT de login del ERP: erp.security.token-expiration (8 h). */
+        const val VIGENCIA_LOGIN = 28_800L
         const val MARGEN_SEGUNDOS = 60L
         private val log = LoggerFactory.getLogger(ErpTokenService::class.java)
     }

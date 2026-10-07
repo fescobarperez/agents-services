@@ -47,6 +47,17 @@ data class ErpStockRow(
     @Nullable val quantity: BigDecimal? = null,
 )
 
+/** POST /api/clients (ClientDtos.Request del ERP). */
+@Serdeable
+data class CreateCustomerBody(
+    val name: String,
+    @Nullable val nit: String?,
+    @Nullable val phone: String?,
+    // client_type rige impuestos y precios en el ERP: no se adivina desde el
+    // chat. Sin valor, el ERP aplica su default ('CF').
+    val status: String = "active",
+)
+
 /** POST /api/quotes (QuoteDtos.Request del ERP). */
 @Serdeable
 data class CreateQuoteBody(
@@ -139,12 +150,17 @@ open class ErpHttpClient(
     }
 
     override fun findCustomerByPhone(tenantId: Long, conversationId: Long, phone: String): CustomerSummary? {
-        // Validada: ClientController solo filtra por `search` (Page<Response>).
-        // Se busca por el telefono y se confirma comparando solo digitos.
-        val uri = UriBuilder.of("/api/clients").queryParam("search", phone).queryParam("size", 5).build()
-        val buscado = phone.filter(Char::isDigit)
-        return pagina(HttpRequest.GET<Any>(uri), tenantId, conversationId, CustomerSummary::class.java)
-            .firstOrNull { buscado.isNotEmpty() && it.phone?.filter(Char::isDigit)?.endsWith(buscado.takeLast(8)) == true }
+        // GET /api/clients/by-phone/{digitos}: el ERP compara solo digitos y
+        // por el final, y devuelve 404 si no hay uno (o si hay varios).
+        val digitos = phone.filter(Char::isDigit)
+        if (digitos.length < 8) return null
+        return uno(HttpRequest.GET<Any>("/api/clients/by-phone/$digitos"), tenantId, conversationId, CustomerSummary::class.java)
+    }
+
+    override fun createCustomer(tenantId: Long, conversationId: Long, name: String, nit: String?, phone: String?): CustomerSummary {
+        val cuerpo = CreateCustomerBody(name = name, nit = nit, phone = phone)
+        return uno(HttpRequest.POST("/api/clients", cuerpo), tenantId, conversationId, CustomerSummary::class.java)
+            ?: throw ErpException("El ERP no devolvio el cliente creado")
     }
 
     override fun previewQuote(
