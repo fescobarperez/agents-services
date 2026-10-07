@@ -58,13 +58,23 @@ class ToolCatalog {
             parameters = listOf(ToolParameter("customerId", "integer", true, "Id del cliente")),
         ),
         ToolDefinition(
+            name = "cotizacion.cliente_nuevo",
+            mode = ToolMode.READ,
+            description = "Registra como cliente a quien escribe (su numero se toma de la conversacion) y lo fija " +
+                "en la cotizacion. Solo si el cliente no esta identificado. Si el NIT ya existe, usa ese cliente.",
+            parameters = listOf(
+                ToolParameter("nombre", "string", true, "Nombre completo o razon social"),
+                ToolParameter("nit", "string", false, "NIT; CF si no tiene"),
+            ),
+        ),
+        ToolDefinition(
             name = "cotizacion.agregar",
             mode = ToolMode.READ,
             description = "Agrega un producto a la cotizacion en curso (queda como prospecto, no se envia). " +
                 "Si ya estaba, suma la cantidad. Si aun no hay cliente, la linea espera y hay que pedirlo.",
             parameters = listOf(
                 ToolParameter("productId", "integer", true, "Id del producto (de productos.search)"),
-                ToolParameter("quantity", "number", true, "Cantidad"),
+                ToolParameter("quantity", "number", true, "Cantidad exacta que pidio el cliente (p. ej. 25), como numero"),
             ),
         ),
         ToolDefinition(
@@ -74,6 +84,17 @@ class ToolCatalog {
             parameters = listOf(
                 ToolParameter("lineId", "integer", true, "Id de la linea"),
                 ToolParameter("quantity", "number", true, "Nueva cantidad"),
+            ),
+        ),
+        ToolDefinition(
+            name = STICKER,
+            mode = ToolMode.READ,
+            description = "Envia un sticker animado de Tino junto a tu respuesta. Usalo SOLO en momentos clave y " +
+                "como maximo uno por turno: 'saludo' al iniciar o retomar la conversacion con alguien; 'listo' al " +
+                "crear la cotizacion o cerrar algo que el cliente pidio; 'buscando' solo si la busqueda sera larga " +
+                "o compleja. No lo uses en respuestas rutinarias, ni repitas el mismo en mensajes seguidos.",
+            parameters = listOf(
+                ToolParameter("momento", "string", true, "Uno de: ${MOMENTOS_STICKER.joinToString(", ")}"),
             ),
         ),
         ToolDefinition(
@@ -117,7 +138,18 @@ class ToolCatalog {
             )
         }
 
-    /** Las que este agente tiene concedidas segun `ai_agent_tools`. */
+    /**
+     * Las que este agente tiene concedidas segun `ai_agent_tools`, menos las
+     * que el canal no sabe pintar (los stickers solo existen en WhatsApp).
+     */
     fun availableFor(contexto: ExecutionContext): List<ToolDefinition> =
-        todas.filter { contexto.toolFor(it.name) != null }
+        todas.filter { contexto.toolFor(it.name) != null && (it.name != STICKER || conStickers(contexto)) }
+
+    companion object {
+        const val STICKER = "tino.sticker"
+        val MOMENTOS_STICKER = listOf("saludo", "listo", "buscando")
+
+        fun conStickers(contexto: ExecutionContext): Boolean =
+            contexto.channel.kind.equals("whatsapp", ignoreCase = true) || contexto.channel.accountRef.startsWith("wa:")
+    }
 }

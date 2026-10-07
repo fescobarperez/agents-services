@@ -20,6 +20,7 @@ import com.erp_maya.agent.prompt.domain.SessionState
 import com.erp_maya.agent.prompt.service.PromptBuilder
 import com.erp_maya.agent.summary.service.ConversationSummarizer
 import com.erp_maya.agent.quote.PanelActionService
+import com.erp_maya.agent.quote.QuoteDraftService
 import io.micronaut.serde.ObjectMapper
 import jakarta.inject.Singleton
 import org.slf4j.LoggerFactory
@@ -41,6 +42,7 @@ open class AgentTurnService(
     private val resumidor: ConversationSummarizer,
     private val json: ObjectMapper,
     private val acciones: PanelActionService,
+    private val borradores: QuoteDraftService,
 ) {
 
     /**
@@ -102,7 +104,13 @@ open class AgentTurnService(
         // El resumen se refresca ANTES de armar el prompt: asi el turno actual
         // ya lo aprovecha y, sobre todo, se reescribe mientras los mensajes
         // viejos siguen dentro de la ventana en vez de despues de perderlos.
-        val estado = resumidor.refrescarSiHaceFalta(conversationId, leerEstado(conversationId))
+        val resumido = resumidor.refrescarSiHaceFalta(conversationId, leerEstado(conversationId))
+        // WhatsApp: quien escribe se identifica por su numero (el external_id
+        // de la conversacion). Va antes del prompt para que el modelo ya sepa
+        // con quien habla y no le pregunte.
+        val telefono = request.conversationRef.externalId.takeIf { contexto.channel.kind == CANAL_WHATSAPP }
+        val estado = if (telefono == null) resumido
+        else resumido.copy(borrador = borradores.identificarPorTelefono(contexto, conversationId, resumido.borrador, telefono))
 
         // La ventana excluye los entrantes de ESTE turno para no duplicarlos:
         // van aparte, al final, como el disparador. Se filtra por turno y no
@@ -125,6 +133,7 @@ open class AgentTurnService(
             estado = estado,
             confirmado = confirmado,
             idempotencyKey = request.idempotencyKey,
+            telefono = telefono,
         )
 
         // Se audita SIEMPRE, con el modelo que de verdad respondio y no con el
@@ -259,5 +268,7 @@ open class AgentTurnService(
 
         /** Margen de lectura para que una rafaga no le quite lugar a la ventana. */
         const val LIMITE_RAFAGA = 10
+
+        const val CANAL_WHATSAPP = "whatsapp"
     }
 }

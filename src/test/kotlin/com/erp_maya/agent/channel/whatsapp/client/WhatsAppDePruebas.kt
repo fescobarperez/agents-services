@@ -28,6 +28,7 @@ class WhatsAppDePruebas : WhatsAppCloudClient("http://localhost", "token-de-prue
 
     fun limpiar() {
         envios.clear()
+        subidas.clear()
         fallar = false
     }
 
@@ -35,5 +36,13 @@ class WhatsAppDePruebas : WhatsAppCloudClient("http://localhost", "token-de-prue
         if (fallar) throw WhatsAppSendException("fallo simulado de la Graph API")
         envios += Envio(phoneNumberId, to, mensaje)
         return "wamid.salida-${secuencia.incrementAndGet()}-${System.nanoTime()}"
+    }
+
+    val subidas = CopyOnWriteArrayList<String>()
+
+    override fun subirMedia(phoneNumberId: String, contenido: ByteArray, mimeType: String, nombre: String): String {
+        if (fallar) throw WhatsAppSendException("fallo simulado de la Graph API")
+        subidas += nombre
+        return "media-${secuencia.incrementAndGet()}"
     }
 }

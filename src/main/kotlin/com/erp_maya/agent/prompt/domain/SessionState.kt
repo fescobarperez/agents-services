@@ -51,6 +51,11 @@ data class QuoteDraft(
     val quoteId: Long? = null,
     val quoteNumber: String? = null,
     val pendientes: List<DraftLine> = emptyList(),
+    /**
+     * WhatsApp: ya se busco al cliente por su numero. Se busca una sola vez
+     * por conversacion; si no aparecio, el modelo pide nombre y NIT.
+     */
+    val telefonoRevisado: Boolean = false,
 )
 
 @Serdeable

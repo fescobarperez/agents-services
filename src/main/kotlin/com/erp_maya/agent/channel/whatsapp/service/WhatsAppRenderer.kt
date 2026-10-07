@@ -9,6 +9,9 @@ sealed interface WhatsAppOutbound {
     data class Text(val body: String) : WhatsAppOutbound
     data class Buttons(val body: String, val buttons: List<Pair<String, String>>) : WhatsAppOutbound
     data class Document(val url: String, val filename: String) : WhatsAppOutbound
+
+    /** Sticker ya subido a Meta; lo agrega [WhatsAppSender], no el renderer. */
+    data class Sticker(val mediaId: String) : WhatsAppOutbound
 }
 
 /**
@@ -36,7 +39,7 @@ class WhatsAppRenderer {
 
                 // Los resultados del catalogo son del panel del ERP: en WhatsApp
                 // el texto del modelo ya los enumera y repetirlos es ruido.
-                is AgentEvent.Card -> if (evento.card in SOLO_PANEL) Unit else {
+                is AgentEvent.Card -> if (evento.card in NO_TEXTO) Unit else {
                     val cuerpo = (textoPendiente?.let { "$it\n\n" } ?: "") + formatear(evento)
                     textoPendiente = cuerpo
                 }
@@ -91,5 +94,8 @@ class WhatsAppRenderer {
 
         /** Tarjetas que solo tienen sentido en un canal con panel. */
         val SOLO_PANEL = setOf("product_results")
+
+        /** Tarjetas que no son texto: la expresion la convierte en sticker el sender. */
+        val NO_TEXTO = SOLO_PANEL + "expression"
     }
 }

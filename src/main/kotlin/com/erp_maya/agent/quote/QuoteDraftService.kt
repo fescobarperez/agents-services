@@ -108,6 +108,52 @@ open class QuoteDraftService(private val erp: ErpClient) {
         return paso.copy(tarjetas = listOf(tarjetaCliente) + paso.tarjetas)
     }
 
+    /**
+     * WhatsApp: identifica al cliente por el numero desde el que escribe. Si
+     * el ERP lo reconoce, el borrador ya nace con cliente y no hay que
+     * preguntarle quien es. Una sola vez por conversacion.
+     */
+    open fun identificarPorTelefono(
+        contexto: ExecutionContext,
+        conversationId: Long,
+        actual: QuoteDraft?,
+        telefono: String,
+    ): QuoteDraft {
+        val borrador = actual ?: QuoteDraft()
+        if (borrador.customerId != null || borrador.telefonoRevisado) return borrador
+        val cliente = runCatching { erp.findCustomerByPhone(contexto.tenantId, conversationId, telefono) }
+            .onFailure { log.warn("no se pudo buscar el cliente por telefono: {}", it.message) }
+            .getOrNull()
+        if (cliente != null) log.info("conversacion {} identificada como cliente {}", conversationId, cliente.id)
+        return borrador.copy(
+            customerId = cliente?.id,
+            customerName = cliente?.name,
+            telefonoRevisado = true,
+        )
+    }
+
+    /**
+     * Alta de cliente desde la conversacion (WhatsApp, numero desconocido).
+     * Si el NIT ya existe en el ERP se usa ese cliente en vez de duplicarlo.
+     */
+    open fun clienteNuevo(
+        contexto: ExecutionContext,
+        conversationId: Long,
+        conversationRef: String,
+        actual: QuoteDraft?,
+        nombre: String,
+        nit: String?,
+        telefono: String?,
+    ): DraftStep {
+        require(nombre.isNotBlank()) { "Falta el nombre del cliente" }
+        val t = contexto.tenantId
+        val nitLimpio = nit?.trim()?.uppercase()?.takeIf { it.isNotEmpty() && it != "CF" && it != "C/F" }
+        val existente = nitLimpio?.let { n -> erp.searchCustomers(t, conversationId, n).firstOrNull { it.nit.equals(n, ignoreCase = true) } }
+        val cliente = existente ?: erp.createCustomer(t, conversationId, nombre.trim(), nitLimpio ?: "CF", telefono)
+        if (existente == null) log.info("cliente {} creado desde la conversacion {}", cliente.id, conversationRef)
+        return fijarCliente(contexto, conversationId, conversationRef, actual, cliente.id)
+    }
+
     /** Cambia la cantidad de una linea; cantidad 0 la quita. */
     open fun editarLinea(
         contexto: ExecutionContext,

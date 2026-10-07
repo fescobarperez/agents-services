@@ -67,6 +67,8 @@ open class AgentLoop(
         estado: SessionState,
         confirmado: Boolean,
         idempotencyKey: String,
+        /** Numero de quien escribe, si el canal lo da (WhatsApp). */
+        telefono: String? = null,
     ): LoopOutcome {
         val esquemas = catalogo.schemasFor(contexto)
         val mensajes = prompt.messages.toMutableList()
@@ -115,10 +117,15 @@ open class AgentLoop(
 
             for (invocacion in salida.completion.toolCalls) {
                 val call = ToolCall(invocacion.name, invocacion.arguments)
-                val resultado = if (call.name.startsWith(PREFIJO_BORRADOR)) {
+                log.info("conversation={} herramienta {} args={}", conversationId, call.name, call.arguments)
+                val resultado = if (call.name == ToolCatalog.STICKER) {
+                    // No toca ningun sistema: deja la expresion en el turno y
+                    // el canal decide como pintarla. Una por turno.
+                    expresar(contexto, call, tarjetas)
+                } else if (call.name.startsWith(PREFIJO_BORRADOR)) {
                     // El borrador vive en el estado del hilo: estas herramientas
                     // lo leen y lo reescriben, por eso no pasan por ToolExecutor.
-                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador)
+                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador, telefono)
                     paso.second?.let { p ->
                         borrador = p.borrador
                         p.tarjetas.forEach { tarjetas[it.card] = it }
@@ -201,6 +208,7 @@ open class AgentLoop(
         conversationId: Long,
         call: ToolCall,
         actual: QuoteDraft?,
+        telefono: String?,
     ): Pair<ToolResult, DraftStep?> {
         if (contexto.toolFor(call.name) == null) {
             return ToolResult.Failed(call.name, "El agente no tiene concedida '${call.name}'") to null
@@ -212,11 +220,20 @@ open class AgentLoop(
                     contexto, conversationId, ref, actual,
                     call.longArg("customerId") ?: throw IllegalArgumentException("Falta customerId"),
                 )
+                "cotizacion.cliente_nuevo" -> cotizaciones.clienteNuevo(
+                    contexto, conversationId, ref, actual,
+                    nombre = call.stringArg("nombre") ?: throw IllegalArgumentException("Falta nombre"),
+                    nit = call.stringArg("nit"),
+                    telefono = telefono,
+                )
                 "cotizacion.agregar" -> cotizaciones.agregar(
                     contexto, conversationId, ref, actual,
                     productId = call.longArg("productId") ?: throw IllegalArgumentException("Falta productId"),
                     sku = null,
-                    cantidad = call.decimalArg("quantity") ?: BigDecimal.ONE,
+                    // Sin cantidad se rechaza: caer en 1 escondia el error y
+                    // la cotizacion salia con una cantidad que nadie pidio.
+                    cantidad = call.decimalArg("quantity")
+                        ?: throw IllegalArgumentException("Falta quantity: indica la cantidad exacta que pidio el cliente"),
                 )
                 "cotizacion.cantidad" -> cotizaciones.editarLinea(
                     contexto, conversationId, actual,
@@ -232,6 +249,25 @@ open class AgentLoop(
         } catch (e: IllegalArgumentException) {
             ToolResult.Failed(call.name, e.message ?: "Parametros invalidos") to null
         }
+    }
+
+    private fun expresar(
+        contexto: ExecutionContext,
+        call: ToolCall,
+        tarjetas: MutableMap<String, AgentEvent.Card>,
+    ): ToolResult {
+        if (catalogo.availableFor(contexto).none { it.name == ToolCatalog.STICKER }) {
+            return ToolResult.Failed(call.name, "Este canal no admite stickers")
+        }
+        val momento = call.stringArg("momento")?.trim()?.lowercase()
+        if (momento !in ToolCatalog.MOMENTOS_STICKER) {
+            return ToolResult.Failed(call.name, "momento debe ser uno de ${ToolCatalog.MOMENTOS_STICKER}")
+        }
+        if (tarjetas.containsKey(PanelCards.EXPRESSION)) {
+            return ToolResult.Failed(call.name, "Ya hay un sticker en este turno")
+        }
+        tarjetas[PanelCards.EXPRESSION] = PanelCards.expresion(momento!!)
+        return ToolResult.Ok(call.name, mapOf("enviado" to momento))
     }
 
     /**

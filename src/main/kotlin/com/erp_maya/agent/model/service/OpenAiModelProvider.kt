@@ -149,7 +149,9 @@ abstract class OpenAiCompatibleModelProvider(
             log.warn("argumentos ilegibles en la invocacion de {}", c.function.name)
             emptyMap()
         }
-        return ToolInvocation(id = c.id, name = c.function.name.replace('_', '.'), arguments = args)
+        // Solo el primer '_' era el punto: `cotizacion_cliente_nuevo` vuelve a
+        // ser `cotizacion.cliente_nuevo`, no `cotizacion.cliente.nuevo`.
+        return ToolInvocation(id = c.id, name = c.function.name.replaceFirst('_', '.'), arguments = args)
     }
 
     private companion object {

@@ -7,6 +7,7 @@ import com.erp_maya.agent.model.domain.ModelPrompt
 import com.erp_maya.agent.model.domain.PromptMessage
 import com.erp_maya.agent.model.domain.Role
 import com.erp_maya.agent.prompt.domain.SessionState
+import com.erp_maya.agent.tools.service.ToolCatalog
 import jakarta.inject.Singleton
 
 /**
@@ -60,7 +61,12 @@ class PromptBuilder {
                 Role.SYSTEM,
                 buildString {
                     append("Cotizacion en curso:\n")
-                    append("- cliente: ").append(b.customerName?.let { "$it (customerId ${b.customerId})" } ?: "sin definir").append('\n')
+                    val cliente = when {
+                        b.customerName != null -> "${b.customerName} (customerId ${b.customerId}); ya identificado, no le pidas sus datos"
+                        b.telefonoRevisado -> "no registrado con este numero; pide nombre y NIT (CF si no tiene) y registralo con cotizacion.cliente_nuevo"
+                        else -> "sin definir"
+                    }
+                    append("- cliente: ").append(cliente).append('\n')
                     append("- documento: ").append(b.quoteNumber ?: "aun no creado").append('\n')
                     if (lineas.isNotEmpty()) append("- lineas en espera de cliente: ").append(lineas)
                 },
@@ -100,8 +106,9 @@ class PromptBuilder {
     }
 
     private fun herramientas(contexto: ExecutionContext): String? {
-        if (contexto.tools.isEmpty()) return null
-        val listado = contexto.tools.joinToString("\n") { t ->
+        val visibles = contexto.tools.filter { it.pattern != ToolCatalog.STICKER || ToolCatalog.conStickers(contexto) }
+        if (visibles.isEmpty()) return null
+        val listado = visibles.joinToString("\n") { t ->
             val tope = t.maxAmount?.let { " (tope $it)" } ?: ""
             "- ${t.pattern} [${t.mode.name.lowercase()}]$tope"
         }
