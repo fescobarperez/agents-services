@@ -52,6 +52,21 @@ class PromptBuilder {
             partes += PromptMessage(Role.SYSTEM, "Datos confirmados de este hilo:\n$datos")
         }
 
+        // La cotizacion en curso: sin esto el modelo no sabe si ya hay cliente
+        // ni que lineas esperan, y volveria a preguntar lo que ya se decidio.
+        estado.borrador?.let { b ->
+            val lineas = b.pendientes.joinToString("; ") { "${it.quantity.toPlainString()} × ${it.name} (productId ${it.productId})" }
+            partes += PromptMessage(
+                Role.SYSTEM,
+                buildString {
+                    append("Cotizacion en curso:\n")
+                    append("- cliente: ").append(b.customerName?.let { "$it (customerId ${b.customerId})" } ?: "sin definir").append('\n')
+                    append("- documento: ").append(b.quoteNumber ?: "aun no creado").append('\n')
+                    if (lineas.isNotEmpty()) append("- lineas en espera de cliente: ").append(lineas)
+                },
+            )
+        }
+
         // 5. La ventana de mensajes, del mas viejo al mas nuevo.
         recientes.takeLast(VENTANA).forEach { m ->
             partes += PromptMessage(

@@ -9,7 +9,7 @@ plugins {
 }
 
 version = "0.1"
-group = "org.agentsservices"
+group = "com.erp_maya"
 
 
 val kotlinVersion = project.properties.get("kotlinVersion")

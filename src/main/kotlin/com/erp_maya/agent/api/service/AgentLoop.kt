@@ -1,6 +1,11 @@
 package com.erp_maya.agent.api.service
 
+import com.erp_maya.agent.api.dto.AgentEvent
 import com.erp_maya.agent.context.domain.ExecutionContext
+import com.erp_maya.agent.erp.domain.ErpException
+import com.erp_maya.agent.prompt.domain.QuoteDraft
+import com.erp_maya.agent.quote.DraftStep
+import com.erp_maya.agent.quote.QuoteDraftService
 import com.erp_maya.agent.model.domain.ModelPrompt
 import com.erp_maya.agent.model.domain.ModelUsage
 import com.erp_maya.agent.model.domain.PromptMessage
@@ -31,6 +36,10 @@ data class LoopOutcome(
     val pendingWrite: PendingWrite?,
     /** Si viene informado, el turno no se resolvio y pasa a una persona. */
     val escalation: String? = null,
+    /** Tarjetas para el panel, construidas con los datos del ERP. */
+    val cards: List<AgentEvent.Card> = emptyList(),
+    /** Cotizacion en curso tras este turno; se persiste en el estado. */
+    val borrador: QuoteDraft? = null,
 )
 
 /**
@@ -48,6 +57,7 @@ open class AgentLoop(
     private val ejecutor: ToolExecutor,
     private val gate: WriteGate,
     private val json: ObjectMapper,
+    private val cotizaciones: QuoteDraftService,
 ) {
 
     open fun run(
@@ -61,9 +71,12 @@ open class AgentLoop(
         val esquemas = catalogo.schemasFor(contexto)
         val mensajes = prompt.messages.toMutableList()
         val ejecutadas = mutableListOf<String>()
+        // Por plantilla: si el modelo busca dos veces, el panel muestra la ultima.
+        val tarjetas = linkedMapOf<String, AgentEvent.Card>()
 
         var uso = ModelUsage()
         var pendiente = estado.pendingWrite
+        var borrador = estado.borrador
         var latencia = 0
         var ultimoModelo = contexto.model
         var huboRespaldo = false
@@ -87,6 +100,8 @@ open class AgentLoop(
                     fallbackUsed = huboRespaldo,
                     latencyMs = latencia,
                     pendingWrite = pendiente,
+                    cards = tarjetas.values.toList(),
+                    borrador = borrador,
                 )
             }
 
@@ -100,13 +115,24 @@ open class AgentLoop(
 
             for (invocacion in salida.completion.toolCalls) {
                 val call = ToolCall(invocacion.name, invocacion.arguments)
-                val resultado = ejecutor.execute(
-                    contexto = contexto,
-                    conversationId = conversationId,
-                    call = call,
-                    turno = WriteContext(estado.turn, pendiente, confirmado),
-                    idempotencyKey = idempotencyKey,
-                )
+                val resultado = if (call.name.startsWith(PREFIJO_BORRADOR)) {
+                    // El borrador vive en el estado del hilo: estas herramientas
+                    // lo leen y lo reescriben, por eso no pasan por ToolExecutor.
+                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador)
+                    paso.second?.let { p ->
+                        borrador = p.borrador
+                        p.tarjetas.forEach { tarjetas[it.card] = it }
+                    }
+                    paso.first
+                } else {
+                    ejecutor.execute(
+                        contexto = contexto,
+                        conversationId = conversationId,
+                        call = call,
+                        turno = WriteContext(estado.turn, pendiente, confirmado),
+                        idempotencyKey = idempotencyKey,
+                    )
+                }
                 ejecutadas += invocacion.name
 
                 if (resultado is ToolResult.Escalate) {
@@ -125,11 +151,16 @@ open class AgentLoop(
                         fallbackUsed = huboRespaldo,
                         latencyMs = latencia,
                         pendingWrite = pendiente,
+                        cards = tarjetas.values.toList(),
+                        borrador = borrador,
                         escalation = "${resultado.reason}: ${resultado.message}",
                     )
                 }
 
                 pendiente = recordarPreview(resultado, call, estado, pendiente)
+                if (resultado is ToolResult.Ok) {
+                    PanelCards.desde(resultado)?.let { tarjetas[it.card] = it }
+                }
                 mensajes += PromptMessage(
                     role = Role.TOOL,
                     content = serializar(resultado),
@@ -156,7 +187,51 @@ open class AgentLoop(
             latencyMs = latencia,
             pendingWrite = pendiente,
             escalation = "TOOL_LOOP_EXHAUSTED",
+            cards = tarjetas.values.toList(),
+            borrador = borrador,
         )
+    }
+
+    /**
+     * Herramientas del borrador de cotizacion. Devuelve el resultado para el
+     * modelo y, si salio bien, el paso con el borrador nuevo y sus tarjetas.
+     */
+    private fun ejecutarBorrador(
+        contexto: ExecutionContext,
+        conversationId: Long,
+        call: ToolCall,
+        actual: QuoteDraft?,
+    ): Pair<ToolResult, DraftStep?> {
+        if (contexto.toolFor(call.name) == null) {
+            return ToolResult.Failed(call.name, "El agente no tiene concedida '${call.name}'") to null
+        }
+        val ref = "cnv_%08d".format(conversationId)
+        return try {
+            val paso = when (call.name) {
+                "cotizacion.cliente" -> cotizaciones.fijarCliente(
+                    contexto, conversationId, ref, actual,
+                    call.longArg("customerId") ?: throw IllegalArgumentException("Falta customerId"),
+                )
+                "cotizacion.agregar" -> cotizaciones.agregar(
+                    contexto, conversationId, ref, actual,
+                    productId = call.longArg("productId") ?: throw IllegalArgumentException("Falta productId"),
+                    sku = null,
+                    cantidad = call.decimalArg("quantity") ?: BigDecimal.ONE,
+                )
+                "cotizacion.cantidad" -> cotizaciones.editarLinea(
+                    contexto, conversationId, actual,
+                    call.longArg("lineId") ?: throw IllegalArgumentException("Falta lineId"),
+                    call.decimalArg("quantity") ?: throw IllegalArgumentException("Falta quantity"),
+                )
+                else -> throw IllegalArgumentException("La herramienta '${call.name}' no existe")
+            }
+            ToolResult.Ok(call.name, paso.datos + ("mensaje" to paso.mensaje)) to paso
+        } catch (e: ErpException) {
+            log.warn("la herramienta {} fallo: {}", call.name, e.message)
+            ToolResult.Failed(call.name, e.message ?: "El ERP no respondio") to null
+        } catch (e: IllegalArgumentException) {
+            ToolResult.Failed(call.name, e.message ?: "Parametros invalidos") to null
+        }
     }
 
     /**
@@ -202,6 +277,7 @@ open class AgentLoop(
 
     companion object {
         const val TOOL_PREVIEW = "cotizaciones.preview"
+        const val PREFIJO_BORRADOR = "cotizacion."
         const val TOOL_EMITIR = "cotizaciones.issue"
 
         const val MENSAJE_ESCALAMIENTO =

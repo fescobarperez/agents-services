@@ -3,6 +3,7 @@ package com.erp_maya.agent.tools.service
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.client.ErpClient
 import com.erp_maya.agent.erp.domain.ErpException
+import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.tools.domain.ToolCall
 import com.erp_maya.agent.tools.domain.ToolResult
@@ -61,13 +62,17 @@ open class ToolExecutor(
     ): Any? {
         val t = contexto.tenantId
         return when (call.name) {
-            "productos.search" -> erp.searchProducts(
+            "productos.search" -> conExistencias(
                 t, conversationId,
-                call.stringArg("query").orEmpty(),
-                (call.longArg("limit") ?: 10L).toInt(),
+                erp.searchProducts(
+                    t, conversationId,
+                    call.stringArg("query").orEmpty(),
+                    (call.longArg("limit") ?: 10L).toInt().coerceIn(1, MAX_RESULTADOS),
+                ),
             )
             "productos.stock" -> erp.getStock(t, conversationId, requireId(call, "productId"))
             "clientes.find" -> erp.findCustomerByPhone(t, conversationId, call.stringArg("phone").orEmpty())
+            "clientes.buscar" -> erp.searchCustomers(t, conversationId, call.stringArg("query").orEmpty())
             "empresa.get" -> erp.getCompany(t, conversationId)
             "cotizaciones.preview" -> erp.previewQuote(t, conversationId, call.longArg("customerId"), lineas(call))
             "cotizaciones.issue" -> erp.issueQuote(
@@ -99,10 +104,25 @@ open class ToolExecutor(
         }
     }
 
+    /**
+     * Completa cada resultado con su existencia. El modelo la necesita para
+     * contestar "hay stock" sin otra vuelta, y el panel la muestra. Si la
+     * consulta de un producto falla, ese queda sin dato: no tumba la busqueda.
+     */
+    private fun conExistencias(t: Long, conversationId: Long, productos: List<ProductSummary>): List<ProductSummary> =
+        productos.map { p ->
+            val stock = runCatching { erp.getStock(t, conversationId, p.id) }
+                .onFailure { log.debug("sin existencia para {}: {}", p.id, it.message) }
+                .getOrNull()
+            p.copy(available = stock?.available, branch = stock?.branch)
+        }
+
     private fun requireId(call: ToolCall, clave: String): Long =
         call.longArg(clave) ?: throw ErpException("Falta el parametro '$clave'")
 
     private companion object {
+        /** Tope de resultados: cada uno cuesta una consulta de existencias. */
+        const val MAX_RESULTADOS = 8
         private val log = LoggerFactory.getLogger(ToolExecutor::class.java)
     }
 }

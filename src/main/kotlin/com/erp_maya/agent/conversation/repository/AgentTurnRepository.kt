@@ -43,9 +43,31 @@ open class AgentTurnRepository(private val jdbc: JdbcOperations) {
                 emptyList()
             }
         }
-        return nuevo.firstOrNull() ?: existente(idempotencyKey)
+        return nuevo.firstOrNull() ?: reclamarFallido(idempotencyKey) ?: existente(idempotencyKey)
             ?: error("La llave '$idempotencyKey' ni inserto ni existe")
     }
+
+    /**
+     * Un turno que FALLO no respondio nada: reintentarlo con la misma llave
+     * debe volver a ejecutarlo, no quedarse en 409 para siempre. El UPDATE
+     * condicionado al estado resuelve la carrera: solo un reintento lo gana.
+     * Los terminados (done/escalated) y los que siguen vivos no se tocan.
+     */
+    private fun reclamarFallido(idempotencyKey: String): AgentTurn? =
+        jdbc.prepareStatement(SQL_RECLAIM_FAILED) { stmt ->
+            stmt.setString(1, idempotencyKey)
+            val rs = stmt.executeQuery()
+            if (rs.next()) {
+                listOf(
+                    AgentTurn(
+                        rs.getLong("id"), rs.getLong("conversation_id"), idempotencyKey,
+                        TurnStatus.PENDING, null, claimedHere = true,
+                    ),
+                )
+            } else {
+                emptyList()
+            }
+        }.firstOrNull()
 
     @Transactional
     open fun existente(idempotencyKey: String): AgentTurn? =
@@ -100,6 +122,13 @@ open class AgentTurnRepository(private val jdbc: JdbcOperations) {
             VALUES (?, ?, 'pending')
             ON CONFLICT (idempotency_key) DO NOTHING
             RETURNING id
+        """
+
+        const val SQL_RECLAIM_FAILED = """
+            UPDATE agent_turns
+               SET status = 'pending', response = NULL, completed_at = NULL
+             WHERE idempotency_key = ? AND status = 'failed'
+            RETURNING id, conversation_id
         """
 
         const val SQL_BY_KEY = """

@@ -42,6 +42,10 @@ data class AgentTurn(
     companion object {
         /** El id publico que ve el canal. */
         fun publicId(id: Long): String = "trn_%08d".format(id)
+
+        /** Inverso de [publicId]; null si no tiene ese formato. */
+        fun fromPublicId(publico: String): Long? =
+            publico.removePrefix("trn_").takeIf { it != publico }?.toLongOrNull()
     }
 }
 
@@ -50,6 +54,11 @@ data class StoredMessage(
     val id: Long,
     val direction: Direction,
     val body: String?,
+    /**
+     * Turno al que pertenece. Nulo mientras el entrante espera en la cola: se
+     * registra al llegar y se enlaza cuando el consumidor abre su turno.
+     */
+    val turnId: Long? = null,
 )
 
 data class Message(

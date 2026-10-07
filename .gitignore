@@ -14,3 +14,8 @@ out/
 .classpath
 .factorypath
 .kotlin/
+
+# Secretos locales: nunca al repo
+.env
+.env.*
+!.env.example

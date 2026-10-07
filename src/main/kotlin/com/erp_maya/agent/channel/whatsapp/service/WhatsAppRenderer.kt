@@ -34,7 +34,9 @@ class WhatsAppRenderer {
                     textoPendiente = evento.text
                 }
 
-                is AgentEvent.Card -> {
+                // Los resultados del catalogo son del panel del ERP: en WhatsApp
+                // el texto del modelo ya los enumera y repetirlos es ruido.
+                is AgentEvent.Card -> if (evento.card in SOLO_PANEL) Unit else {
                     val cuerpo = (textoPendiente?.let { "$it\n\n" } ?: "") + formatear(evento)
                     textoPendiente = cuerpo
                 }
@@ -70,7 +72,10 @@ class WhatsAppRenderer {
 
     /** Una tarjeta en WhatsApp es texto: no hay componente para pintarla. */
     private fun formatear(card: AgentEvent.Card): String {
-        val lineas = card.data.entries.joinToString("\n") { "${etiqueta(it.key)}: ${it.value}" }
+        // Solo campos simples: listas y mapas son para canales con panel.
+        val lineas = card.data.entries
+            .filter { it.value != null && it.value !is Collection<*> && it.value !is Map<*, *> }
+            .joinToString("\n") { "${etiqueta(it.key)}: ${it.value}" }
         return lineas
     }
 
@@ -83,5 +88,8 @@ class WhatsAppRenderer {
         /** Limites de la API de WhatsApp, no elecciones nuestras. */
         const val LARGO_BOTON = 20
         const val LARGO_CUERPO_BOTONES = 1024
+
+        /** Tarjetas que solo tienen sentido en un canal con panel. */
+        val SOLO_PANEL = setOf("product_results")
     }
 }

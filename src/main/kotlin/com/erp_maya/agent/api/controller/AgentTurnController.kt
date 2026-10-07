@@ -17,6 +17,9 @@ import io.micronaut.http.annotation.Controller
 import io.micronaut.http.annotation.Header
 import io.micronaut.http.annotation.Post
 import io.micronaut.http.annotation.Status
+import com.erp_maya.agent.erp.client.ErpUserToken
+import io.micronaut.scheduling.TaskExecutors
+import io.micronaut.scheduling.annotation.ExecuteOn
 import io.micronaut.http.exceptions.HttpStatusException
 import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
@@ -35,8 +38,12 @@ open class AgentTurnController(
 
     @Post("/turn", consumes = [MediaType.APPLICATION_JSON], produces = [MediaType.APPLICATION_JSON])
     @Status(HttpStatus.OK)
+    // El turno llama al modelo y al ERP con clientes bloqueantes y usa JDBC:
+    // no puede correr en el event loop de Netty.
+    @ExecuteOn(TaskExecutors.BLOCKING)
     open fun turn(
         @Header(CABECERA_API_KEY) apiKey: String?,
+        @Header(CABECERA_TOKEN_USUARIO) tokenUsuario: String?,
         @Valid @Body request: TurnRequest,
     ): TurnResponse {
         val caller = authenticator.authenticate(apiKey)
@@ -47,7 +54,8 @@ open class AgentTurnController(
             // permisos; el valor no se usa nunca.
             log.debug("cliente={} mando scope en el cuerpo; se ignora", caller.clientId)
         }
-        return service.handle(request, caller)
+        // Las herramientas consultan el ERP como el usuario que chatea, si vino.
+        return ErpUserToken.con(tokenUsuario) { service.handle(request, caller) }
     }
 
     /**
@@ -73,6 +81,7 @@ open class AgentTurnController(
 
     private companion object {
         const val CABECERA_API_KEY = "X-Api-Key"
+        const val CABECERA_TOKEN_USUARIO = "X-Erp-User-Token"
         private val log = LoggerFactory.getLogger(AgentTurnController::class.java)
     }
 }

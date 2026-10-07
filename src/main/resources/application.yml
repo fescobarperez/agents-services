@@ -48,6 +48,16 @@ agent:
         - clientes.read
         - cotizaciones.read
 
+  # Resumen de la conversacion. El disparador normal es la inactividad; en
+  # conversaciones largas y continuas hay ademas un respaldo dentro del turno
+  # para no perder mensajes que salen de la ventana del prompt.
+  summary:
+    job-enabled: true
+    inactivity-minutes: 10
+    check-interval: 1m
+    batch-size: 20
+
+
 # Canal de WhatsApp. Los dos secretos, siempre por variable de entorno: sin
 # app-secret el webhook se rechaza entero en vez de aceptar sin verificar.
 whatsapp:
@@ -55,7 +65,17 @@ whatsapp:
   app-secret: ${WHATSAPP_APP_SECRET:}
   # Se agrupan los mensajes del mismo remitente que lleguen dentro de esta
   # ventana: quien escribe tres lineas seguidas espera una respuesta, no tres.
+  # Es deslizante: cada mensaje nuevo empuja a los anteriores (tope de 15 s).
   burst-window-seconds: 3
+  # Envio por la Graph API. El token, como los otros secretos, solo por
+  # variable de entorno; sin el, los envios fallan y vuelven a la cola.
+  graph-url: ${WHATSAPP_GRAPH_URL:`https://graph.facebook.com/v23.0`}
+  access-token: ${WHATSAPP_ACCESS_TOKEN:}
+  # Consumidor de la cola: corre en proceso, cada `interval`.
+  consumer:
+    enabled: ${WHATSAPP_CONSUMER_ENABLED:true}
+    interval: 1s
+    batch-size: 20
 
 # Servicio externo. Las rutas concretas aun no estan validadas contra
 # maya-erp-services: van marcadas con TODO en ErpClient.

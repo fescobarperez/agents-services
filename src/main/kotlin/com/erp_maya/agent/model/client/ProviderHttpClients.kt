@@ -1,30 +1,44 @@
 package com.erp_maya.agent.model.client
 
-import io.micronaut.http.client.HttpClient
-import jakarta.annotation.PreDestroy
 import jakarta.inject.Singleton
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
 
 /**
- * Un cliente HTTP por URL base, creado una vez y reutilizado.
+ * Cliente HTTP para los proveedores de modelo.
  *
- * No se usa un `@Client` declarativo porque la URL del proveedor es dato
- * —vive en `ai_providers.base_url`— y un `@Client` la fija al compilar.
- * Tampoco se crea uno por turno: cada cliente trae su propio pool de
- * conexiones y su event loop, y abrirlos por conversacion agota el proceso.
+ * Usa `java.net.http.HttpClient` del JDK y no el cliente Netty de Micronaut:
+ * con JDK 25 el TLS de Netty falla contra los proveedores con
+ * «ByteBuffer derived from closeable shared sessions not supported» (el
+ * descifrado GCM del JDK no acepta los buffers directos que Netty reserva en
+ * arenas compartidas). El cliente del JDK no pasa por esos buffers.
+ *
+ * Uno solo para todo el proceso: la URL del proveedor es dato —vive en
+ * `ai_providers.base_url`— y el cliente del JDK ya mantiene su propio pool.
  */
 @Singleton
 class ProviderHttpClients {
 
-    private val clientes = ConcurrentHashMap<String, HttpClient>()
+    private val cliente: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(10))
+        .version(HttpClient.Version.HTTP_1_1)
+        .build()
 
-    fun forBaseUrl(baseUrl: String): HttpClient =
-        clientes.computeIfAbsent(baseUrl) { HttpClient.create(URI(it).toURL()) }
+    /** Respuesta cruda; interpretar el cuerpo es cosa de cada proveedor. */
+    data class Respuesta(val status: Int, val body: String)
 
-    @PreDestroy
-    fun cerrar() {
-        clientes.values.forEach { runCatching { it.close() } }
-        clientes.clear()
+    fun postJson(url: String, bearer: String, json: String, timeout: Duration): Respuesta {
+        val peticion = HttpRequest.newBuilder(URI(url))
+            .timeout(timeout)
+            .header("Authorization", "Bearer $bearer")
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(json))
+            .build()
+        val r = cliente.send(peticion, HttpResponse.BodyHandlers.ofString())
+        return Respuesta(r.statusCode(), r.body() ?: "")
     }
 }

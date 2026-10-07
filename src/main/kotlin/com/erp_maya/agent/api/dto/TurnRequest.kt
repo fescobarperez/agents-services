@@ -56,7 +56,12 @@ data class Actor(
 data class TurnInput(
     @field:NotBlank val type: String,
     @Nullable val text: String? = null,
-)
+    /** Con type = "action": que boton del panel se pulso (add_line, edit_line, send_quote). */
+    @JsonProperty("action_id") @Nullable val actionId: String? = null,
+    @Nullable val payload: Map<String, Any?>? = null,
+) {
+    val esAccion: Boolean get() = type == "action" && !actionId.isNullOrBlank()
+}
 
 @Serdeable
 data class ChannelCapabilities(

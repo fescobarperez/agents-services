@@ -39,15 +39,32 @@ open class InboundEventRepository(private val jdbc: JdbcOperations) {
         senderRef: String,
         payload: String,
         disponibleEn: Instant,
-    ): Boolean = jdbc.prepareStatement(SQL_ENQUEUE) { stmt ->
-        stmt.setLong(1, channelId)
-        stmt.setString(2, externalId)
-        stmt.setString(3, senderRef)
-        stmt.setString(4, payload)
-        stmt.setTimestamp(5, Timestamp.from(disponibleEn))
-        val rs = stmt.executeQuery()
-        if (rs.next()) listOf(rs.getLong(1)) else emptyList()
-    }.isNotEmpty()
+    ): Boolean {
+        val insertado = jdbc.prepareStatement(SQL_ENQUEUE) { stmt ->
+            stmt.setLong(1, channelId)
+            stmt.setString(2, externalId)
+            stmt.setString(3, senderRef)
+            stmt.setString(4, payload)
+            stmt.setTimestamp(5, Timestamp.from(disponibleEn))
+            val rs = stmt.executeQuery()
+            if (rs.next()) listOf(rs.getLong(1)) else emptyList()
+        }.isNotEmpty()
+
+        if (insertado) {
+            // Ventana deslizante: cada mensaje nuevo del mismo remitente
+            // empuja a los que siguen esperando, para que la rafaga entera se
+            // procese en un solo turno. Con tope, para que alguien que no deja
+            // de escribir no postergue su respuesta indefinidamente.
+            jdbc.prepareStatement(SQL_POSPONER) { stmt ->
+                stmt.setTimestamp(1, Timestamp.from(disponibleEn))
+                stmt.setLong(2, channelId)
+                stmt.setString(3, senderRef)
+                stmt.setInt(4, TOPE_RAFAGA_SEGUNDOS)
+                stmt.executeUpdate()
+            }
+        }
+        return insertado
+    }
 
     /**
      * Toma un lote de eventos vencidos y los marca en proceso.
@@ -77,6 +94,13 @@ open class InboundEventRepository(private val jdbc: JdbcOperations) {
 
     @Transactional
     open fun markDone(id: Long) = actualizar(id, "done", null)
+
+    /**
+     * Lo da por perdido sin reintentar: para fallos que otro intento no va a
+     * arreglar, como una cuenta sin agente vigente.
+     */
+    @Transactional
+    open fun markDiscarded(id: Long, error: String) = actualizar(id, "failed", error)
 
     /**
      * Devuelve el evento a la cola con espera creciente, o lo da por perdido
@@ -110,6 +134,15 @@ open class InboundEventRepository(private val jdbc: JdbcOperations) {
         const val MAX_INTENTOS = 5
         const val ESPERA_BASE_SEGUNDOS = 30
 
+        /** Maximo que una rafaga puede postergar al primero de sus mensajes. */
+        const val TOPE_RAFAGA_SEGUNDOS = 15
+
+        private const val SQL_POSPONER = """
+            UPDATE inbound_events SET available_at = ?
+            WHERE channel_id = ? AND sender_ref = ? AND status = 'pending'
+              AND created_at > now() - make_interval(secs => ?)
+        """
+
         private const val SQL_ENQUEUE = """
             INSERT INTO inbound_events (channel_id, external_id, sender_ref, payload, available_at)
             VALUES (?, ?, ?, ?::jsonb, ?)
@@ -122,7 +155,10 @@ open class InboundEventRepository(private val jdbc: JdbcOperations) {
                                       attempts = attempts + 1
             WHERE id IN (
                 SELECT id FROM inbound_events
-                WHERE status = 'pending' AND available_at <= now()
+                WHERE (status = 'pending' AND available_at <= now())
+                   -- Rescate: un consumidor que murio a mitad de lote deja
+                   -- eventos en 'processing' para siempre si nadie los reclama.
+                   OR (status = 'processing' AND locked_at < now() - interval '5 minutes')
                 ORDER BY available_at
                 LIMIT ?
                 FOR UPDATE SKIP LOCKED
