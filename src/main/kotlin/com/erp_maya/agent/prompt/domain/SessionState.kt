@@ -56,7 +56,24 @@ data class QuoteDraft(
      * por conversacion; si no aparecio, el modelo pide nombre y NIT.
      */
     val telefonoRevisado: Boolean = false,
-)
+    /** Datos que pide el playbook (`cotizacion.dato`): clave → valor. */
+    val datos: Map<String, String> = emptyMap(),
+    /** Ultima vez que se toco la cotizacion (epoch ms); de aqui sale el cierre por inactividad. */
+    @Nullable val actualizadaMs: Long? = null,
+    /** La anterior que se cerro y por que, p. ej. "COT-000002 (PDF enviado)". Solo informativo. */
+    @Nullable val ultimaCerrada: String? = null,
+) {
+    /**
+     * Cierra la cotizacion en curso: lo siguiente que pida el cliente va en
+     * una nueva. Se conserva quien es el cliente.
+     */
+    fun cerrar(motivo: String): QuoteDraft = QuoteDraft(
+        customerId = customerId,
+        customerName = customerName,
+        telefonoRevisado = telefonoRevisado,
+        ultimaCerrada = quoteNumber?.let { "$it ($motivo)" } ?: ultimaCerrada,
+    )
+}
 
 @Serdeable
 data class DraftLine(

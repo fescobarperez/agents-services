@@ -15,6 +15,7 @@ import com.erp_maya.agent.conversation.domain.TurnInProgressException
 import com.erp_maya.agent.conversation.domain.TurnStatus
 import com.erp_maya.agent.conversation.service.ConversationService
 import com.erp_maya.agent.model.repository.AgentRunRepository
+import com.erp_maya.agent.playbook.service.PlaybookService
 import com.erp_maya.agent.tools.service.ConfirmationDetector
 import com.erp_maya.agent.prompt.domain.SessionState
 import com.erp_maya.agent.prompt.service.PromptBuilder
@@ -43,6 +44,7 @@ open class AgentTurnService(
     private val json: ObjectMapper,
     private val acciones: PanelActionService,
     private val borradores: QuoteDraftService,
+    private val playbooks: PlaybookService,
 ) {
 
     /**
@@ -109,8 +111,16 @@ open class AgentTurnService(
         // de la conversacion). Va antes del prompt para que el modelo ya sepa
         // con quien habla y no le pregunte.
         val telefono = request.conversationRef.externalId.takeIf { contexto.channel.kind == CANAL_WHATSAPP }
-        val estado = if (telefono == null) resumido
+        val identificado = if (telefono == null) resumido
         else resumido.copy(borrador = borradores.identificarPorTelefono(contexto, conversationId, resumido.borrador, telefono))
+
+        // Si la cotizacion en curso ya no es del agente (enviada, movida por un
+        // vendedor, vencida por inactividad) se cierra ANTES de que el modelo
+        // la vea: lo que pida el cliente va en una nueva y no se mezcla.
+        val playbook = playbooks.para(contexto)
+        val estado = identificado.copy(
+            borrador = borradores.revisarVigencia(contexto, conversationId, identificado.borrador, playbook),
+        )
 
         // La ventana excluye los entrantes de ESTE turno para no duplicarlos:
         // van aparte, al final, como el disparador. Se filtra por turno y no
@@ -119,7 +129,7 @@ open class AgentTurnService(
         val recientes = conversaciones.recientes(conversationId, PromptBuilder.VENTANA + LIMITE_RAFAGA)
             .filterNot { it.turnId == turnId && it.direction == Direction.IN }
 
-        val prompt = promptBuilder.build(contexto, estado, recientes, request.input.text)
+        val prompt = promptBuilder.build(contexto, estado, recientes, request.input.text, playbook)
 
         // La confirmacion se decide aqui y se le pasa a la compuerta ya
         // resuelta: interpretar un "si" a partir de texto libre no es algo que
@@ -134,6 +144,7 @@ open class AgentTurnService(
             confirmado = confirmado,
             idempotencyKey = request.idempotencyKey,
             telefono = telefono,
+            playbook = playbook,
         )
 
         // Se audita SIEMPRE, con el modelo que de verdad respondio y no con el
@@ -158,7 +169,8 @@ open class AgentTurnService(
             conversationId = idConversacion(conversationId),
             turnId = AgentTurn.publicId(turnId),
             // El texto primero y despues las tarjetas: el canal las pinta en ese orden.
-            events = listOf(AgentEvent.Text(texto)) + salida.cards,
+            // Los documentos al final: el texto los presenta y luego llegan.
+            events = listOf(AgentEvent.Text(texto)) + salida.cards + salida.documents,
             state = TurnState(summaryVersion = estado.summaryVersion),
             usage = TokenUsage(
                 input = salida.usage.input,

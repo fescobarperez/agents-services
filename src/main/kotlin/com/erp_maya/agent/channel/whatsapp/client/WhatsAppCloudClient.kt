@@ -97,6 +97,11 @@ open class WhatsAppCloudClient(
             type = "document",
             document = WaSendDocument(link = m.url, filename = m.filename),
         )
+        is WhatsAppOutbound.DocumentMedia -> WaSendRequest(
+            to = to,
+            type = "document",
+            document = WaSendDocument(id = m.mediaId, filename = m.filename, caption = m.caption),
+        )
         is WhatsAppOutbound.Sticker -> WaSendRequest(to = to, type = "sticker", sticker = WaSendMedia(m.mediaId))
     }
 
@@ -178,8 +183,15 @@ data class WaSendButton(val type: String = "reply", val reply: WaSendReply)
 @Serdeable
 data class WaSendReply(val id: String, val title: String)
 
+/** Por `link` (URL publica) o por `id` (media ya subida a Meta). */
 @Serdeable
-data class WaSendDocument(val link: String, val filename: String)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class WaSendDocument(
+    @Nullable val link: String? = null,
+    @Nullable val id: String? = null,
+    val filename: String,
+    @Nullable val caption: String? = null,
+)
 
 /** Media ya subida a Meta, referida por su id. */
 @Serdeable

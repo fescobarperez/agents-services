@@ -118,9 +118,9 @@ object PanelCards {
     }
 
     // TODO: la moneda deberia venir de la empresa; el ERP aun no la expone.
-    private fun monto(valor: BigDecimal) = "Q " + formato("#,##0.00").format(valor.setScale(2, RoundingMode.HALF_UP))
+    internal fun monto(valor: BigDecimal) = "Q " + formato("#,##0.00").format(valor.setScale(2, RoundingMode.HALF_UP))
 
-    private fun cantidad(valor: BigDecimal) = formato("#,##0.##").format(valor)
+    internal fun cantidad(valor: BigDecimal) = formato("#,##0.##").format(valor)
 
     private fun formato(patron: String) = DecimalFormat(patron, DecimalFormatSymbols(Locale.US))
 }

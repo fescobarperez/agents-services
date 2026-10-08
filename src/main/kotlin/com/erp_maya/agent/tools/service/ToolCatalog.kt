@@ -78,6 +78,22 @@ class ToolCatalog {
             ),
         ),
         ToolDefinition(
+            name = "cotizacion.dato",
+            mode = ToolMode.READ,
+            description = "Guarda un dato que la cotizacion necesita (los pide el checklist de la cotizacion en " +
+                "curso, p. ej. direccion de entrega). Usa exactamente la clave que indica el checklist.",
+            parameters = listOf(
+                ToolParameter("clave", "string", true, "Clave del dato, tal como aparece en el checklist"),
+                ToolParameter("valor", "string", true, "Lo que dijo el cliente"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.nueva",
+            mode = ToolMode.READ,
+            description = "Deja la cotizacion en curso como esta y empieza una nueva para el mismo cliente. Usala " +
+                "cuando el cliente pida algo que no va en la cotizacion abierta (pregunta antes si hay una).",
+        ),
+        ToolDefinition(
             name = "cotizacion.cantidad",
             mode = ToolMode.READ,
             description = "Cambia la cantidad de una linea de la cotizacion en curso; 0 la elimina.",
@@ -85,6 +101,13 @@ class ToolCatalog {
                 ToolParameter("lineId", "integer", true, "Id de la linea"),
                 ToolParameter("quantity", "number", true, "Nueva cantidad"),
             ),
+        ),
+        ToolDefinition(
+            name = ENVIAR,
+            mode = ToolMode.READ,
+            description = "Envia al cliente el PDF de la cotizacion en curso. Usala SOLO cuando el cliente confirme " +
+                "que la quiere recibir. Si sale como preliminar (prospecto), dile que un agente de ventas la " +
+                "revisara y aprobara y que le confirmara precios y existencias.",
         ),
         ToolDefinition(
             name = STICKER,
@@ -140,13 +163,17 @@ class ToolCatalog {
 
     /**
      * Las que este agente tiene concedidas segun `ai_agent_tools`, menos las
-     * que el canal no sabe pintar (los stickers solo existen en WhatsApp).
+     * que solo existen en WhatsApp (stickers, enviar el PDF al cliente).
      */
     fun availableFor(contexto: ExecutionContext): List<ToolDefinition> =
-        todas.filter { contexto.toolFor(it.name) != null && (it.name != STICKER || conStickers(contexto)) }
+        todas.filter { contexto.toolFor(it.name) != null && (it.name !in SOLO_WHATSAPP || conStickers(contexto)) }
 
     companion object {
         const val STICKER = "tino.sticker"
+        const val ENVIAR = "cotizacion.enviar"
+
+        /** Herramientas que solo tienen sentido con un cliente al otro lado del chat. */
+        val SOLO_WHATSAPP = setOf(STICKER, ENVIAR)
         val MOMENTOS_STICKER = listOf("saludo", "listo", "buscando")
 
         fun conStickers(contexto: ExecutionContext): Boolean =
