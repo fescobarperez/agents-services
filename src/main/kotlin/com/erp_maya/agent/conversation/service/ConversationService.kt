@@ -72,6 +72,19 @@ open class ConversationService(
     open fun fallar(turnId: Long, status: TurnStatus, detalle: String) =
         turnos.fail(turnId, status, detalle)
 
+    open fun destino(conversationId: Long) = conversaciones.destination(conversationId)
+
+    open fun yaRegistrado(externalId: String) = conversaciones.existsExternalId(externalId)
+
+    /**
+     * Un mensaje que el sistema le mando al cliente fuera de un turno (aviso
+     * del ERP). Queda en el hilo para que el modelo lo vea si el cliente
+     * responde.
+     */
+    open fun registrarAviso(conversationId: Long, externalId: String, texto: String) {
+        conversaciones.appendMessage(conversationId, null, externalId, Direction.OUT, texto)
+    }
+
     open fun contarMensajes(conversationId: Long) = conversaciones.countMessages(conversationId)
 
     /** Los ultimos mensajes del hilo, para la ventana del prompt. */

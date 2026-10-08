@@ -34,6 +34,29 @@ data class SessionState(
     val pendingWrite: PendingWrite? = null,
     /** Cotizacion que se esta armando en esta conversacion (asistente del ERP). */
     val borrador: QuoteDraft? = null,
+    /**
+     * El ultimo aviso del asesor (solicitudes resueltas). Cuando el cliente
+     * responde "¿y eso por que?", es casi siempre sobre esto: el modelo lo
+     * necesita con los ids para no adivinar a cual solicitud se refiere.
+     */
+    @Nullable val avisoReciente: AvisoCambios? = null,
+)
+
+@Serdeable
+data class AvisoCambios(
+    val quoteId: Long,
+    val docNumber: String,
+    /** epoch ms */
+    val enviadoMs: Long,
+    val items: List<AvisoItem> = emptyList(),
+)
+
+@Serdeable
+data class AvisoItem(
+    val solicitudId: Long,
+    val estado: String,
+    val detalle: String,
+    @Nullable val respuesta: String? = null,
 )
 
 /**
@@ -62,6 +85,8 @@ data class QuoteDraft(
     @Nullable val actualizadaMs: Long? = null,
     /** La anterior que se cerro y por que, p. ej. "COT-000002 (PDF enviado)". Solo informativo. */
     @Nullable val ultimaCerrada: String? = null,
+    /** Id en el ERP de esa cotizacion cerrada: para reabrirla o pedirle cambios sin adivinar. */
+    @Nullable val ultimaCerradaId: Long? = null,
 ) {
     /**
      * Cierra la cotizacion en curso: lo siguiente que pida el cliente va en
@@ -72,6 +97,7 @@ data class QuoteDraft(
         customerName = customerName,
         telefonoRevisado = telefonoRevisado,
         ultimaCerrada = quoteNumber?.let { "$it ($motivo)" } ?: ultimaCerrada,
+        ultimaCerradaId = quoteId ?: ultimaCerradaId,
     )
 }
 

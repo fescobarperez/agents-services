@@ -14,12 +14,17 @@ import java.math.BigDecimal
  * - add_line {sku, quantity?}      agrega el producto (1 si no viene cantidad).
  * - edit_line {line_id, quantity?} cambia la cantidad; sin cantidad la pide.
  * - send_quote                     enviar a revision: aun no habilitado.
+ * - cot {boton}                    decision del cliente sobre la cotizacion
+ *                                  enviada (botones de WhatsApp), ver [QuoteDecisionService].
  *
  * Un fallo del ERP no revienta el turno: se contesta con el motivo y el
  * borrador queda como estaba.
  */
 @Singleton
-open class PanelActionService(private val borradores: QuoteDraftService) {
+open class PanelActionService(
+    private val borradores: QuoteDraftService,
+    private val decisiones: QuoteDecisionService,
+) {
 
     open fun ejecutar(
         contexto: ExecutionContext,
@@ -52,6 +57,7 @@ open class PanelActionService(private val borradores: QuoteDraftService) {
                     "Enviar a revisión desde el asistente aún no está habilitado. " +
                         "La cotización ${actual?.quoteNumber ?: ""} quedó como prospecto en el módulo Cotizaciones.",
                 )
+                ACCION_DECISION -> decisiones.ejecutar(contexto, conversationId, actual, payload["boton"]?.toString().orEmpty())
                 else -> sinCambios(actual, "No reconozco la acción '${input.actionId}'.")
             }
         } catch (e: ErpException) {
@@ -69,6 +75,7 @@ open class PanelActionService(private val borradores: QuoteDraftService) {
             "add_line" -> "[Panel] Añadir a cotización: ${p["sku"] ?: p["product_id"]}"
             "edit_line" -> "[Panel] Editar línea ${p["line_id"]}"
             "send_quote" -> "[Panel] Enviar cotización"
+            ACCION_DECISION -> decisiones.describir(p["boton"]?.toString().orEmpty())
             else -> "[Panel] ${input.actionId}"
         }
     }
@@ -83,7 +90,9 @@ open class PanelActionService(private val borradores: QuoteDraftService) {
         else -> null
     }
 
-    private companion object {
+    companion object {
+        /** actionId con el que el canal entrega un boton `cot:...`. */
+        const val ACCION_DECISION = "cot"
         private val log = LoggerFactory.getLogger(PanelActionService::class.java)
     }
 }

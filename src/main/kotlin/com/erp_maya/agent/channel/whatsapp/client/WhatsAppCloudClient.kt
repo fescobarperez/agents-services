@@ -88,7 +88,7 @@ open class WhatsAppCloudClient(
             type = "interactive",
             interactive = WaSendInteractive(
                 type = "button",
-                body = WaSendText(m.body),
+                body = WaSendBody(m.body),
                 action = WaSendAction(m.buttons.map { (id, titulo) -> WaSendButton(reply = WaSendReply(id, titulo)) }),
             ),
         )
@@ -167,12 +167,16 @@ data class WaSendRequest(
     @Nullable val sticker: WaSendMedia? = null,
 )
 
-/** Sirve para el `text` de un mensaje y para el `body` de uno interactivo. */
+/** El `text` de un mensaje de texto: `{"body": "..."}`. */
 @Serdeable
 data class WaSendText(val body: String)
 
+/** El `body` de un mensaje interactivo: Meta lo pide como `{"text": "..."}`. */
 @Serdeable
-data class WaSendInteractive(val type: String, val body: WaSendText, val action: WaSendAction)
+data class WaSendBody(val text: String)
+
+@Serdeable
+data class WaSendInteractive(val type: String, val body: WaSendBody, val action: WaSendAction)
 
 @Serdeable
 data class WaSendAction(val buttons: List<WaSendButton>)

@@ -3,6 +3,9 @@ package com.erp_maya.agent.erp.client
 import com.erp_maya.agent.erp.domain.CompanyInfo
 import com.erp_maya.agent.erp.domain.CustomerSummary
 import com.erp_maya.agent.erp.domain.ErpQuote
+import com.erp_maya.agent.erp.domain.ErpChangeRequest
+import com.erp_maya.agent.erp.domain.ChangeRequestWrite
+import com.erp_maya.agent.erp.domain.ErpQuoteSummary
 import com.erp_maya.agent.erp.domain.QuoteLineWrite
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.IssuedQuote
@@ -83,6 +86,21 @@ data class CreateQuoteItem(
     @Nullable val unitPrice: BigDecimal?,
     @Nullable val discount: BigDecimal?,
 )
+
+/** POST /api/quotes/{id}/client-approve | client-reject (QuoteDtos.ClientDecisionRequest). */
+@Serdeable
+data class ClientDecisionBody(val version: Int, @Nullable val reasonCode: String?, @Nullable val note: String?, val actor: String)
+
+@Serdeable
+data class ClientReasonBody(@Nullable val reasonCode: String?, @Nullable val note: String?)
+
+/** Quien hace la operacion en el ERP (bitacora). */
+@Serdeable
+data class ActorBody(val actor: String)
+
+/** El cuerpo de error del ERP (ApiError). */
+@Serdeable
+data class ErpApiError(@Nullable val message: String? = null)
 
 /** POST /api/quotes/{id}/notes (QuoteDtos.NoteRequest del ERP). */
 @Serdeable
@@ -299,6 +317,51 @@ open class ErpHttpClient(
     override fun getQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote? =
         uno(HttpRequest.GET<Any>("/api/quotes/$quoteId"), tenantId, conversationId, ErpQuote::class.java)
 
+    override fun finalizeQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote =
+        uno(HttpRequest.POST("/api/quotes/$quoteId/finalize", ActorBody(CREADO_POR)), tenantId, conversationId, ErpQuote::class.java)
+            ?: throw ErpException("La cotizacion $quoteId no existe en el ERP")
+
+    override fun reopenQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote =
+        uno(HttpRequest.POST("/api/quotes/$quoteId/reopen", ActorBody(CREADO_POR)), tenantId, conversationId, ErpQuote::class.java)
+            ?: throw ErpException("La cotizacion $quoteId no existe en el ERP")
+
+    override fun quotesByClient(tenantId: Long, conversationId: Long, clientId: Long): List<ErpQuoteSummary> =
+        lista(HttpRequest.GET<Any>("/api/quotes/by-client/$clientId?limit=10"), tenantId, conversationId, ErpQuoteSummary::class.java)
+
+    override fun createChangeRequest(
+        tenantId: Long,
+        conversationId: Long,
+        quoteId: Long,
+        request: ChangeRequestWrite,
+    ): ErpChangeRequest =
+        uno(HttpRequest.POST("/api/quotes/$quoteId/change-requests", request), tenantId, conversationId, ErpChangeRequest::class.java)
+            ?: throw ErpException("La cotizacion $quoteId no existe en el ERP")
+
+    override fun listChangeRequests(tenantId: Long, conversationId: Long, quoteId: Long): List<ErpChangeRequest> =
+        lista(HttpRequest.GET<Any>("/api/quotes/$quoteId/change-requests"), tenantId, conversationId, ErpChangeRequest::class.java)
+
+    override fun clientApprove(tenantId: Long, conversationId: Long, quoteId: Long, version: Int): ErpQuote =
+        uno(HttpRequest.POST("/api/quotes/$quoteId/client-approve", ClientDecisionBody(version, null, null, ACTOR_CLIENTE)),
+            tenantId, conversationId, ErpQuote::class.java)
+            ?: throw ErpException("La cotizacion $quoteId no existe en el ERP")
+
+    override fun clientReject(
+        tenantId: Long,
+        conversationId: Long,
+        quoteId: Long,
+        version: Int,
+        reasonCode: String?,
+        note: String?,
+    ): ErpQuote =
+        uno(HttpRequest.POST("/api/quotes/$quoteId/client-reject", ClientDecisionBody(version, reasonCode, note, ACTOR_CLIENTE)),
+            tenantId, conversationId, ErpQuote::class.java)
+            ?: throw ErpException("La cotizacion $quoteId no existe en el ERP")
+
+    override fun clientReason(tenantId: Long, conversationId: Long, quoteId: Long, reasonCode: String?, note: String?): ErpQuote =
+        uno(HttpRequest.POST("/api/quotes/$quoteId/client-reason", ClientReasonBody(reasonCode, note)),
+            tenantId, conversationId, ErpQuote::class.java)
+            ?: throw ErpException("La cotizacion $quoteId no existe en el ERP")
+
     override fun getQuotePdf(tenantId: Long, conversationId: Long, quoteId: Long): ByteArray? =
         // GET /api/quotes/{id}/pdf: el mismo PDF que el ERP adjunta al correo.
         ejecutar(HttpRequest.GET<Any>("/api/quotes/$quoteId/pdf"), tenantId, conversationId, PDF) { decorado ->
@@ -408,6 +471,13 @@ open class ErpHttpClient(
                         throw ErpException("El ERP rechazo la credencial del servicio", segundo)
                     }
                 }
+                // Regla de negocio del ERP (409): su mensaje explica el motivo y
+                // le sirve al modelo para decirselo al cliente.
+                HttpStatus.CONFLICT, HttpStatus.BAD_REQUEST -> throw ErpException(
+                    e.response.getBody(ErpApiError::class.java).orElse(null)?.message
+                        ?: "El ERP rechazo la operacion en ${req.path}",
+                    e,
+                )
                 else -> throw ErpException("El ERP respondio ${e.status.code} en ${req.path}", e)
             }
         } catch (e: ErpException) {
@@ -430,6 +500,7 @@ open class ErpHttpClient(
         /** Vigencia por defecto de un prospecto; el vendedor la ajusta al revisar. */
         const val VIGENCIA_DIAS = 15L
         const val CREADO_POR = "Asistente Tino"
+        const val ACTOR_CLIENTE = "Cliente (WhatsApp, vía Tino)"
         private val PDF = MediaType("application/pdf")
         private val log = LoggerFactory.getLogger(ErpHttpClient::class.java)
     }

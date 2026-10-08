@@ -1,6 +1,7 @@
 package com.erp_maya.agent.conversation.repository
 
 import com.erp_maya.agent.conversation.domain.Conversation
+import com.erp_maya.agent.conversation.domain.ConversationDestination
 import com.erp_maya.agent.conversation.domain.Direction
 import com.erp_maya.agent.conversation.domain.StoredMessage
 import io.micronaut.data.jdbc.runtime.JdbcOperations
@@ -167,6 +168,35 @@ open class ConversationRepository(private val jdbc: JdbcOperations) {
             if (rs.next()) rs.getInt(1) else 0
         }
 
+    /** A quien y por donde se le escribe a la conversacion (para avisos fuera de un turno). */
+    @Transactional
+    open fun destination(conversationId: Long): ConversationDestination? =
+        jdbc.prepareStatement(SQL_DESTINO) { stmt ->
+            stmt.setLong(1, conversationId)
+            val rs = stmt.executeQuery()
+            listOfNotNull(
+                if (rs.next()) {
+                    ConversationDestination(
+                        conversationId = conversationId,
+                        tenantId = rs.getLong("tenant_id"),
+                        channelKind = rs.getString("kind"),
+                        accountRef = rs.getString("account_ref"),
+                        externalRef = rs.getString("external_ref"),
+                        lastInboundAt = rs.getTimestamp("ultimo_entrante")?.toInstant(),
+                    )
+                } else {
+                    null
+                },
+            )
+        }.firstOrNull()
+
+    @Transactional
+    open fun existsExternalId(externalId: String): Boolean =
+        jdbc.prepareStatement("SELECT 1 FROM messages WHERE external_id = ?") { stmt ->
+            stmt.setString(1, externalId)
+            stmt.executeQuery().next()
+        }
+
     private fun leerMensaje(rs: ResultSet) = StoredMessage(
         id = rs.getLong("id"),
         direction = if (rs.getString("direction") == "in") Direction.IN else Direction.OUT,
@@ -243,6 +273,14 @@ open class ConversationRepository(private val jdbc: JdbcOperations) {
               )
             ORDER BY c.updated_at
             LIMIT ?
+        """
+
+        const val SQL_DESTINO = """
+            SELECT c.tenant_id, c.external_ref, ch.kind, ch.account_ref,
+                   (SELECT max(m.created_at) FROM messages m
+                     WHERE m.conversation_id = c.id AND m.direction = 'in') AS ultimo_entrante
+            FROM conversations c JOIN channels ch ON ch.id = c.channel_id
+            WHERE c.id = ?
         """
 
         const val SQL_MESSAGE = """

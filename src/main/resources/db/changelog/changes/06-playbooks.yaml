@@ -113,3 +113,69 @@ databaseChangeLog:
               DELETE FROM ai_agent_tools
                WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas')
                  AND tool_pattern IN ('cotizacion.dato', 'cotizacion.nueva', 'cotizacion.enviar', 'tino.sticker');
+
+  - changeSet:
+      id: 064-tools-ciclo-cotizacion
+      author: stackline
+      comment: Consultar, reabrir y pedir cambios sobre cotizaciones ya terminadas.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve)
+              SELECT a.id, t.patron, 'read', true
+              FROM ai_agents a,
+                   (VALUES ('cotizacion.listar'), ('cotizacion.reabrir'), ('cotizacion.solicitar_cambio')) AS t(patron)
+              WHERE a.code = 'ventas'
+                AND NOT EXISTS (
+                    SELECT 1 FROM ai_agent_tools x WHERE x.agent_id = a.id AND x.tool_pattern = t.patron
+                );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM ai_agent_tools
+               WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas')
+                 AND tool_pattern IN ('cotizacion.listar', 'cotizacion.reabrir', 'cotizacion.solicitar_cambio');
+
+  - changeSet:
+      id: 065-tools-consultas
+      author: stackline
+      comment: Ver la respuesta del asesor a las solicitudes y preguntarle sobre ella.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve)
+              SELECT a.id, t.patron, 'read', true
+              FROM ai_agents a,
+                   (VALUES ('cotizacion.solicitudes'), ('cotizacion.consultar')) AS t(patron)
+              WHERE a.code = 'ventas'
+                AND NOT EXISTS (
+                    SELECT 1 FROM ai_agent_tools x WHERE x.agent_id = a.id AND x.tool_pattern = t.patron
+                );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM ai_agent_tools
+               WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas')
+                 AND tool_pattern IN ('cotizacion.solicitudes', 'cotizacion.consultar');
+
+  - changeSet:
+      id: 066-tools-decision-cliente
+      author: stackline
+      comment: El cliente aprueba o rechaza por texto la cotizacion enviada y deja el motivo (opcional).
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve)
+              SELECT a.id, t.patron, 'read', true
+              FROM ai_agents a,
+                   (VALUES ('cotizacion.aprobar'), ('cotizacion.rechazar'), ('cotizacion.motivo_rechazo')) AS t(patron)
+              WHERE a.code = 'ventas'
+                AND NOT EXISTS (
+                    SELECT 1 FROM ai_agent_tools x WHERE x.agent_id = a.id AND x.tool_pattern = t.patron
+                );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM ai_agent_tools
+               WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas')
+                 AND tool_pattern IN ('cotizacion.aprobar', 'cotizacion.rechazar', 'cotizacion.motivo_rechazo');

@@ -69,6 +69,42 @@ open class WhatsAppSender(
     }
 
     /**
+     * Aviso fuera de un turno (lo dispara el ERP): un texto y, si viene, el
+     * PDF de la cotizacion. Devuelve el wamid del texto.
+     */
+    open fun avisar(
+        cuenta: String,
+        destinatario: String,
+        texto: String,
+        documento: WhatsAppOutbound.Document?,
+        tenantId: Long,
+        conversationId: Long,
+        leyenda: String = "Cotización actualizada por tu asesor.",
+        nota: String = "PDF actualizado enviado al cliente por WhatsApp",
+        botones: WhatsAppOutbound.Buttons? = null,
+    ): String {
+        val phoneNumberId = cuenta.removePrefix(PREFIJO)
+        require(phoneNumberId != cuenta) { "La cuenta '$cuenta' no es de WhatsApp" }
+        val wamid = cliente.send(phoneNumberId, destinatario, WhatsAppOutbound.Text(texto))
+        documento?.let {
+            documentoDelErp(
+                phoneNumberId, destinatario, it, tenantId, conversationId,
+                leyenda = leyenda,
+                nota = nota,
+            )
+        }
+        // Los botones van al final, despues del PDF: es lo ultimo que ve.
+        // Si Meta los rechaza no se repite el aviso entero (texto y PDF ya
+        // salieron): se registra el motivo para corregirlo.
+        botones?.let { b ->
+            runCatching { cliente.send(phoneNumberId, destinatario, b) }
+                .onSuccess { log.info("botones de decisión enviados a {}: {}", destinatario, b.buttons.map { it.first }) }
+                .onFailure { e -> log.error("no se enviaron los botones de decisión a {}: {}", destinatario, e.message) }
+        }
+        return wamid
+    }
+
+    /**
      * El PDF de la cotizacion: se baja del ERP con el bot, se sube a Meta y se
      * manda como documento. Si algo falla se avisa al cliente con un texto en
      * vez de reventar: un reintento de la cola reenviaria todo el turno.
@@ -79,6 +115,8 @@ open class WhatsAppSender(
         doc: WhatsAppOutbound.Document,
         tenantId: Long,
         conversationId: Long,
+        leyenda: String = LEYENDA,
+        nota: String = "PDF preliminar enviado al cliente por WhatsApp",
     ): String {
         val quoteId = ID_COTIZACION.find(doc.url)?.groupValues?.get(1)?.toLongOrNull()
         return try {
@@ -86,10 +124,10 @@ open class WhatsAppSender(
             val pdf = erp.getQuotePdf(tenantId, conversationId, quoteId)
                 ?: error("el ERP no encontró la cotización $quoteId")
             val mediaId = cliente.subirMedia(phoneNumberId, pdf, "application/pdf", doc.filename)
-            val wamid = cliente.send(phoneNumberId, destinatario, WhatsAppOutbound.DocumentMedia(mediaId, doc.filename, LEYENDA))
+            val wamid = cliente.send(phoneNumberId, destinatario, WhatsAppOutbound.DocumentMedia(mediaId, doc.filename, leyenda))
             // La bitacora es lo que ve el vendedor al revisarla: que sepa que
             // el cliente ya tiene la version preliminar.
-            runCatching { erp.addQuoteNote(tenantId, conversationId, quoteId, "PDF preliminar enviado al cliente por WhatsApp") }
+            runCatching { erp.addQuoteNote(tenantId, conversationId, quoteId, nota) }
                 .onFailure { log.warn("no se anotó el envío en la cotización {}: {}", quoteId, it.message) }
             log.info("PDF de la cotización {} enviado por WhatsApp a {}", quoteId, destinatario)
             wamid

@@ -101,6 +101,8 @@ data class ErpQuote(
     @Nullable val total: BigDecimal? = null,
     @Nullable val status: String? = null,
     val items: List<ErpQuoteItem> = emptyList(),
+    /** Sube con cada envio: la decision del cliente se ata a esta version. */
+    val sentVersion: Int = 0,
 )
 
 /** Linea para crear (productId) o editar (id) una cotizacion. */
@@ -116,3 +118,45 @@ data class QuoteLineWrite(
 
 /** Fallo hablando con maya-erp-services. */
 class ErpException(mensaje: String, causa: Throwable? = null) : RuntimeException(mensaje, causa)
+
+/** GET /api/quotes/by-client/{id}: en que va cada cotizacion del cliente. */
+@Serdeable
+data class ErpQuoteSummary(
+    val id: Long,
+    val docNumber: String,
+    @Nullable val status: String? = null,
+    @Nullable val total: BigDecimal? = null,
+    /** Un vendedor ya la abrio: el cliente ya no la puede reabrir. */
+    val taken: Boolean = false,
+    @Nullable val quoteDate: String? = null,
+    val sentVersion: Int = 0,
+    @Nullable val validUntil: String? = null,
+)
+
+/** POST /api/quotes/{id}/change-requests. */
+@Serdeable
+data class ChangeRequestWrite(
+    val kind: String,
+    @Nullable val productId: Long? = null,
+    @Nullable val productName: String? = null,
+    @Nullable val quantity: BigDecimal? = null,
+    @Nullable val discountPct: BigDecimal? = null,
+    @Nullable val detail: String? = null,
+    @Nullable val source: String? = null,
+    @Nullable val requestedBy: String? = null,
+    /** Solo para kind = consulta: la solicitud sobre la que pregunta el cliente. */
+    @Nullable val parentId: Long? = null,
+)
+
+@Serdeable
+data class ErpChangeRequest(
+    val id: Long,
+    val kind: String,
+    @Nullable val status: String? = null,
+    @Nullable val summary: String? = null,
+    @Nullable val detail: String? = null,
+    @Nullable val reasonLabel: String? = null,
+    /** Lo que se le dijo al cliente: explicacion del motivo + comentario del vendedor. */
+    @Nullable val clientMessage: String? = null,
+    @Nullable val parentId: Long? = null,
+)

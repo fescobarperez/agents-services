@@ -98,12 +98,14 @@ object PanelCards {
             "tax_label" to q.taxRate?.let { "IVA ${cantidad(it)} %" },
             "tax" to q.tax?.let(::monto),
             "total" to q.total?.let(::monto),
-            "estimated" to q.status.equals("prospecto", ignoreCase = true),
+            // Abierta o prospecto: nadie de ventas reviso todavia los precios.
+            "estimated" to (q.status.equals("prospecto", ignoreCase = true) || q.status.equals("abierta", ignoreCase = true)),
         ),
     )
 
     private fun etiquetaEstado(s: String?) = when (s?.lowercase()) {
         null -> null
+        "abierta" -> "En armado"
         "prospecto" -> "Prospecto"
         "borrador" -> "Borrador"
         "enviada" -> "Enviada"

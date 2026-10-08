@@ -4,6 +4,9 @@ import com.erp_maya.agent.erp.domain.CompanyInfo
 import com.erp_maya.agent.erp.domain.CustomerSummary
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.ErpQuote
+import com.erp_maya.agent.erp.domain.ErpChangeRequest
+import com.erp_maya.agent.erp.domain.ChangeRequestWrite
+import com.erp_maya.agent.erp.domain.ErpQuoteSummary
 import com.erp_maya.agent.erp.domain.IssuedQuote
 import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
@@ -87,6 +90,38 @@ interface ErpClient {
     /** Reemplaza las lineas: las que no vengan se eliminan; sin id son nuevas. */
     fun updateQuoteLines(tenantId: Long, conversationId: Long, quote: ErpQuote, lines: List<QuoteLineWrite>): ErpQuote =
         throw ErpException("updateQuoteLines no implementado")
+
+    /** abierta → prospecto: el cliente la dio por terminada. */
+    fun finalizeQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote =
+        throw ErpException("finalizeQuote no implementado")
+
+    /** prospecto → abierta, solo si ningun vendedor la abrio (si no, ErpException con el motivo). */
+    fun reopenQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote =
+        throw ErpException("reopenQuote no implementado")
+
+    /** Las ultimas cotizaciones de un cliente. */
+    fun quotesByClient(tenantId: Long, conversationId: Long, clientId: Long): List<ErpQuoteSummary> =
+        throw ErpException("quotesByClient no implementado")
+
+    /** Solicitud de cambio sobre una cotizacion que ya tomo un vendedor. */
+    fun createChangeRequest(tenantId: Long, conversationId: Long, quoteId: Long, request: ChangeRequestWrite): ErpChangeRequest =
+        throw ErpException("createChangeRequest no implementado")
+
+    /** Las solicitudes de cambio de una cotizacion, con su respuesta y motivo. */
+    fun listChangeRequests(tenantId: Long, conversationId: Long, quoteId: Long): List<ErpChangeRequest> =
+        throw ErpException("listChangeRequests no implementado")
+
+    /** El cliente aprueba la version enviada. ErpException si ya no es esa version, vencio, etc. */
+    fun clientApprove(tenantId: Long, conversationId: Long, quoteId: Long, version: Int): ErpQuote =
+        throw ErpException("clientApprove no implementado")
+
+    /** El cliente rechaza la version enviada; motivo opcional. */
+    fun clientReject(tenantId: Long, conversationId: Long, quoteId: Long, version: Int, reasonCode: String?, note: String?): ErpQuote =
+        throw ErpException("clientReject no implementado")
+
+    /** Motivo que el cliente da despues de rechazar. */
+    fun clientReason(tenantId: Long, conversationId: Long, quoteId: Long, reasonCode: String?, note: String?): ErpQuote =
+        throw ErpException("clientReason no implementado")
 
     /** El PDF de la cotizacion tal como lo genera el ERP; null si no existe. */
     fun getQuotePdf(tenantId: Long, conversationId: Long, quoteId: Long): ByteArray? =
