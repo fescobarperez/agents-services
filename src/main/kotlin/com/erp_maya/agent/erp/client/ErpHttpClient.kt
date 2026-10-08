@@ -84,6 +84,10 @@ data class CreateQuoteItem(
     @Nullable val discount: BigDecimal?,
 )
 
+/** POST /api/quotes/{id}/notes (QuoteDtos.NoteRequest del ERP). */
+@Serdeable
+data class NoteBody(val note: String, @Nullable val actor: String?)
+
 /** PUT /api/quotes/{id} (QuoteDtos.UpdateRequest del ERP). */
 @Serdeable
 data class UpdateQuoteBody(
@@ -295,6 +299,21 @@ open class ErpHttpClient(
     override fun getQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote? =
         uno(HttpRequest.GET<Any>("/api/quotes/$quoteId"), tenantId, conversationId, ErpQuote::class.java)
 
+    override fun getQuotePdf(tenantId: Long, conversationId: Long, quoteId: Long): ByteArray? =
+        // GET /api/quotes/{id}/pdf: el mismo PDF que el ERP adjunta al correo.
+        ejecutar(HttpRequest.GET<Any>("/api/quotes/$quoteId/pdf"), tenantId, conversationId, PDF) { decorado ->
+            provider.client().toBlocking().retrieve(decorado, ByteArray::class.java)
+        }
+
+    override fun addQuoteNote(tenantId: Long, conversationId: Long, quoteId: Long, note: String) {
+        val req = HttpRequest.POST("/api/quotes/$quoteId/notes", NoteBody(note, CREADO_POR))
+        ejecutar(req, tenantId, conversationId) { decorado ->
+            // 204 sin cuerpo: se pide String solo para fijar el tipo de respuesta.
+            provider.client().toBlocking().exchange(decorado, String::class.java)
+        }
+            ?: throw ErpException("La cotizacion $quoteId no existe en el ERP")
+    }
+
     override fun updateQuoteLines(tenantId: Long, conversationId: Long, quote: ErpQuote, lines: List<QuoteLineWrite>): ErpQuote {
         val cuerpo = UpdateQuoteBody(
             // El PUT exige vigencia; se conserva la que tenga.
@@ -316,14 +335,19 @@ open class ErpHttpClient(
      * agente, y lo que hace evidente en el codigo si alguna llamada se fuera
      * sin empresa.
      */
-    private fun <T : Any> decorar(req: MutableHttpRequest<T>, tenantId: Long, conversationId: Long) = req
+    private fun <T : Any> decorar(
+        req: MutableHttpRequest<T>,
+        tenantId: Long,
+        conversationId: Long,
+        acepta: MediaType = MediaType.APPLICATION_JSON_TYPE,
+    ) = req
         .header(CABECERA_TENANT, tenantId.toString())
         .header(CABECERA_CONVERSACION, conversationId.toString())
         .header("X-Agent-Service", config.clientId ?: "agents-services")
         // Con usuario (widget del ERP) se consulta como el; si no, token de servicio.
         .bearerAuth(ErpUserToken.get() ?: tokens.currentToken())
         .contentType(MediaType.APPLICATION_JSON)
-        .accept(MediaType.APPLICATION_JSON)
+        .accept(acepta)
 
     private fun <T : Any, R : Any> uno(req: MutableHttpRequest<T>, tenantId: Long, conversationId: Long, tipo: Class<R>): R? =
         ejecutar(req, tenantId, conversationId) { decorado ->
@@ -354,10 +378,11 @@ open class ErpHttpClient(
         req: MutableHttpRequest<T>,
         tenantId: Long,
         conversationId: Long,
+        acepta: MediaType = MediaType.APPLICATION_JSON_TYPE,
         llamada: (MutableHttpRequest<T>) -> R,
     ): R? {
         return try {
-            llamada(decorar(req, tenantId, conversationId))
+            llamada(decorar(req, tenantId, conversationId, acepta))
         } catch (e: HttpClientResponseException) {
             when (e.status) {
                 HttpStatus.NOT_FOUND -> null
@@ -378,7 +403,7 @@ open class ErpHttpClient(
                     tokens.invalidate()
                     log.warn("el ERP devolvio 401; se renueva el token y se reintenta una vez")
                     try {
-                        llamada(decorar(req, tenantId, conversationId))
+                        llamada(decorar(req, tenantId, conversationId, acepta))
                     } catch (segundo: HttpClientResponseException) {
                         throw ErpException("El ERP rechazo la credencial del servicio", segundo)
                     }
@@ -405,6 +430,7 @@ open class ErpHttpClient(
         /** Vigencia por defecto de un prospecto; el vendedor la ajusta al revisar. */
         const val VIGENCIA_DIAS = 15L
         const val CREADO_POR = "Asistente Tino"
+        private val PDF = MediaType("application/pdf")
         private val log = LoggerFactory.getLogger(ErpHttpClient::class.java)
     }
 }

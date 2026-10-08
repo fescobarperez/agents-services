@@ -14,3 +14,5 @@ databaseChangeLog:
       file: db/changelog/changes/04-queue.yaml
   - include:
       file: db/changelog/changes/05-seed.yaml
+  - include:
+      file: db/changelog/changes/06-playbooks.yaml

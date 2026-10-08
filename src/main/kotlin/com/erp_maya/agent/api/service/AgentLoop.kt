@@ -11,6 +11,7 @@ import com.erp_maya.agent.model.domain.ModelUsage
 import com.erp_maya.agent.model.domain.PromptMessage
 import com.erp_maya.agent.model.domain.Role
 import com.erp_maya.agent.model.service.ModelRouter
+import com.erp_maya.agent.playbook.domain.Playbook
 import com.erp_maya.agent.prompt.domain.SessionState
 import com.erp_maya.agent.tools.domain.PendingWrite
 import com.erp_maya.agent.tools.domain.ToolCall
@@ -40,6 +41,8 @@ data class LoopOutcome(
     val cards: List<AgentEvent.Card> = emptyList(),
     /** Cotizacion en curso tras este turno; se persiste en el estado. */
     val borrador: QuoteDraft? = null,
+    /** Archivos para el cliente (PDF de la cotizacion), en orden. */
+    val documents: List<AgentEvent.Document> = emptyList(),
 )
 
 /**
@@ -69,12 +72,16 @@ open class AgentLoop(
         idempotencyKey: String,
         /** Numero de quien escribe, si el canal lo da (WhatsApp). */
         telefono: String? = null,
+        /** Como vende el agente para esta empresa: datos requeridos, limites, cierre. */
+        playbook: Playbook = Playbook(),
     ): LoopOutcome {
         val esquemas = catalogo.schemasFor(contexto)
         val mensajes = prompt.messages.toMutableList()
         val ejecutadas = mutableListOf<String>()
         // Por plantilla: si el modelo busca dos veces, el panel muestra la ultima.
         val tarjetas = linkedMapOf<String, AgentEvent.Card>()
+        // Por url: si el modelo pide enviar dos veces, el PDF sale una sola.
+        val documentos = linkedMapOf<String, AgentEvent.Document>()
 
         var uso = ModelUsage()
         var pendiente = estado.pendingWrite
@@ -104,6 +111,7 @@ open class AgentLoop(
                     pendingWrite = pendiente,
                     cards = tarjetas.values.toList(),
                     borrador = borrador,
+                    documents = documentos.values.toList(),
                 )
             }
 
@@ -125,10 +133,11 @@ open class AgentLoop(
                 } else if (call.name.startsWith(PREFIJO_BORRADOR)) {
                     // El borrador vive en el estado del hilo: estas herramientas
                     // lo leen y lo reescriben, por eso no pasan por ToolExecutor.
-                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador, telefono)
+                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador, telefono, playbook, confirmado)
                     paso.second?.let { p ->
                         borrador = p.borrador
                         p.tarjetas.forEach { tarjetas[it.card] = it }
+                        p.documentos.forEach { documentos[it.url] = it }
                     }
                     paso.first
                 } else {
@@ -209,9 +218,12 @@ open class AgentLoop(
         call: ToolCall,
         actual: QuoteDraft?,
         telefono: String?,
+        playbook: Playbook,
+        confirmado: Boolean,
     ): Pair<ToolResult, DraftStep?> {
-        if (contexto.toolFor(call.name) == null) {
-            return ToolResult.Failed(call.name, "El agente no tiene concedida '${call.name}'") to null
+        // Concedida al agente y disponible en este canal (enviar es solo WhatsApp).
+        if (catalogo.availableFor(contexto).none { it.name == call.name }) {
+            return ToolResult.Failed(call.name, "El agente no tiene disponible '${call.name}' en este canal") to null
         }
         val ref = "cnv_%08d".format(conversationId)
         return try {
@@ -234,7 +246,18 @@ open class AgentLoop(
                     // la cotizacion salia con una cantidad que nadie pidio.
                     cantidad = call.decimalArg("quantity")
                         ?: throw IllegalArgumentException("Falta quantity: indica la cantidad exacta que pidio el cliente"),
+                    playbook = playbook,
                 )
+                // `confirmado` sale del mensaje del cliente en este turno, no
+                // de lo que diga el modelo.
+                ToolCatalog.ENVIAR -> cotizaciones.enviar(contexto, conversationId, actual, playbook, confirmado)
+                "cotizacion.dato" -> cotizaciones.dato(
+                    actual,
+                    clave = call.stringArg("clave") ?: throw IllegalArgumentException("Falta clave"),
+                    valor = call.stringArg("valor") ?: throw IllegalArgumentException("Falta valor"),
+                    playbook = playbook,
+                )
+                "cotizacion.nueva" -> cotizaciones.nueva(actual)
                 "cotizacion.cantidad" -> cotizaciones.editarLinea(
                     contexto, conversationId, actual,
                     call.longArg("lineId") ?: throw IllegalArgumentException("Falta lineId"),

@@ -12,6 +12,9 @@ sealed interface WhatsAppOutbound {
 
     /** Sticker ya subido a Meta; lo agrega [WhatsAppSender], no el renderer. */
     data class Sticker(val mediaId: String) : WhatsAppOutbound
+
+    /** Documento ya subido a Meta (p. ej. el PDF que se bajo del ERP). */
+    data class DocumentMedia(val mediaId: String, val filename: String, val caption: String?) : WhatsAppOutbound
 }
 
 /**
@@ -37,12 +40,11 @@ class WhatsAppRenderer {
                     textoPendiente = evento.text
                 }
 
-                // Los resultados del catalogo son del panel del ERP: en WhatsApp
-                // el texto del modelo ya los enumera y repetirlos es ruido.
-                is AgentEvent.Card -> if (evento.card in NO_TEXTO) Unit else {
-                    val cuerpo = (textoPendiente?.let { "$it\n\n" } ?: "") + formatear(evento)
-                    textoPendiente = cuerpo
-                }
+                // Las tarjetas son del panel del ERP y no se mandan al cliente:
+                // traen datos internos (ids, estado, banderas) y el texto del
+                // modelo ya resume lo importante; el detalle va en el PDF. La
+                // expresion la convierte en sticker el sender.
+                is AgentEvent.Card -> Unit
 
                 is AgentEvent.Choices -> {
                     val cuerpo = textoPendiente ?: "Elija una opcion:"
@@ -73,17 +75,6 @@ class WhatsAppRenderer {
         return salida
     }
 
-    /** Una tarjeta en WhatsApp es texto: no hay componente para pintarla. */
-    private fun formatear(card: AgentEvent.Card): String {
-        // Solo campos simples: listas y mapas son para canales con panel.
-        val lineas = card.data.entries
-            .filter { it.value != null && it.value !is Collection<*> && it.value !is Map<*, *> }
-            .joinToString("\n") { "${etiqueta(it.key)}: ${it.value}" }
-        return lineas
-    }
-
-    private fun etiqueta(clave: String) = clave.replace('_', ' ').replaceFirstChar { it.uppercase() }
-
     private fun recortar(texto: String, maximo: Int) =
         if (texto.length <= maximo) texto else texto.take(maximo - 1) + "…"
 
@@ -91,11 +82,5 @@ class WhatsAppRenderer {
         /** Limites de la API de WhatsApp, no elecciones nuestras. */
         const val LARGO_BOTON = 20
         const val LARGO_CUERPO_BOTONES = 1024
-
-        /** Tarjetas que solo tienen sentido en un canal con panel. */
-        val SOLO_PANEL = setOf("product_results")
-
-        /** Tarjetas que no son texto: la expresion la convierte en sticker el sender. */
-        val NO_TEXTO = SOLO_PANEL + "expression"
     }
 }

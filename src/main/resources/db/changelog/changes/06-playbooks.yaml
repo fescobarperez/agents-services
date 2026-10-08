@@ -1,0 +1,115 @@
+# Playbooks: como vende el agente para cada empresa (datos que una cotizacion
+# necesita, limites, cuando se cierra). Lo aplica el codigo; el prompt solo lo
+# describe. Ver playbook/domain/Playbook.kt para el formato del JSON.
+databaseChangeLog:
+
+  - changeSet:
+      id: 060-agent-playbooks
+      author: stackline
+      changes:
+        - createTable:
+            tableName: agent_playbooks
+            remarks: Configuracion de ventas por agente y empresa (tenant_id nulo = la general del agente)
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: agent_code, type: VARCHAR(60), constraints: { nullable: false } }
+              - column: { name: tenant_id, type: BIGINT }
+              - column: { name: niche, type: VARCHAR(60), remarks: 'Giro del negocio; para plantillas por nicho (etapa 2)' }
+              - column: { name: version, type: INT, constraints: { nullable: false } }
+              - column: { name: is_active, type: BOOLEAN, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: config, type: JSONB, constraints: { nullable: false } }
+              - column: { name: created_by, type: VARCHAR(120) }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: |
+              CREATE UNIQUE INDEX uq_agent_playbooks_version
+                ON agent_playbooks (agent_code, COALESCE(tenant_id, 0), version);
+      rollback:
+        - dropTable: { tableName: agent_playbooks }
+
+  - changeSet:
+      id: 061-seed-playbook-ventas
+      author: stackline
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO agent_playbooks (agent_code, tenant_id, version, created_by, config)
+              VALUES ('ventas', NULL, 1, 'seed', '{
+                "audiencias": { "whatsapp": "cliente", "erp": "vendedor" },
+                "limites": {
+                  "monto_maximo": 25000,
+                  "lineas_maximas": 30,
+                  "puede_ofrecer_descuentos": false,
+                  "fuera_de_alcance": ["credito", "garantias", "devoluciones"]
+                },
+                "cotizacion": {
+                  "datos_requeridos": [
+                    { "clave": "cliente", "etiqueta": "Cliente identificado (nombre y NIT o CF)", "origen": "sistema" },
+                    { "clave": "lineas", "etiqueta": "Productos y cantidades", "origen": "sistema" },
+                    { "clave": "direccion_entrega", "etiqueta": "Direccion de entrega", "origen": "cliente",
+                      "descripcion": "zona, colonia o direccion completa" },
+                    { "clave": "fecha_entrega", "etiqueta": "Fecha deseada de entrega", "origen": "cliente", "opcional": true }
+                  ],
+                  "cierre": { "al_enviar_pdf": true, "inactividad_horas": 24, "si_cambia_estado_en_erp": true },
+                  "envio": { "requiere_confirmacion": true, "marcar_preliminar": true }
+                }
+              }'::jsonb);
+      rollback:
+        - sql:
+            sql: DELETE FROM agent_playbooks WHERE agent_code = 'ventas' AND tenant_id IS NULL AND version = 1;
+
+  - changeSet:
+      id: 062-prompt-ventas-v3
+      author: stackline
+      comment: Reglas generales del agente de ventas. Lo especifico de cada empresa sale del playbook.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO ai_prompt_versions (agent_code, version, created_by, body)
+              VALUES ('ventas', 3, 'stackline', $$Eres Tino, el asistente de ventas de la empresa. Ayudas a cotizar: consultas productos, precios y existencias con tus herramientas y armas la cotizacion en el sistema. Respondes breve, claro y cordial.
+
+              Reglas que no se rompen:
+              1. Nunca inventes productos, precios, existencias ni montos. Todo dato sale de una herramienta.
+              2. Nunca calcules subtotales, impuestos ni totales. Antes de crear la cotizacion menciona solo precio unitario y cantidad; despues repite exactamente las lineas y montos que devuelvan las herramientas cotizacion.*.
+              3. Trabajas una cotizacion a la vez. El bloque "Cotizacion en curso" te dice cual esta abierta y su checklist; una cotizacion CERRADA no se toca. Si el cliente pide algo que parece otra compra, preguntale si va en la abierta o en una nueva (cotizacion.nueva).
+              4. Sigue el checklist: pide lo que falte de a un dato por mensaje, en el orden indicado, y guardalo con la herramienta que corresponda. No ofrezcas enviar la cotizacion hasta que el checklist este completo.
+              5. Para enviar la cotizacion muestra un resumen y espera que el cliente confirme de forma explicita; recien entonces usa cotizacion.enviar. Si sale como preliminar, aclara que un agente de ventas la revisara y aprobara.
+              6. Respeta los limites del negocio. Lo que este fuera de tu alcance (descuentos, credito, reclamos u otros temas indicados) lo deriva a un agente de ventas, sin prometer nada.
+              7. Si una herramienta devuelve un error, explicale al cliente en palabras simples que paso y que sigue; no muestres mensajes tecnicos.$$)
+              ON CONFLICT (agent_code, version) DO NOTHING;
+              UPDATE ai_agents
+                 SET prompt_version_id = (SELECT id FROM ai_prompt_versions WHERE agent_code = 'ventas' AND version = 3)
+               WHERE code = 'ventas';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE ai_agents
+                 SET prompt_version_id = (SELECT id FROM ai_prompt_versions WHERE agent_code = 'ventas' ORDER BY version DESC OFFSET 1 LIMIT 1)
+               WHERE code = 'ventas';
+              DELETE FROM ai_prompt_versions WHERE agent_code = 'ventas' AND version = 3;
+
+  - changeSet:
+      id: 063-tools-cotizacion-whatsapp
+      author: stackline
+      comment: Herramientas que hasta ahora se concedian a mano con SQL.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve)
+              SELECT a.id, t.patron, 'read', true
+              FROM ai_agents a,
+                   (VALUES ('clientes.buscar'), ('cotizacion.cliente'), ('cotizacion.cliente_nuevo'),
+                           ('cotizacion.agregar'), ('cotizacion.cantidad'), ('cotizacion.dato'),
+                           ('cotizacion.nueva'), ('cotizacion.enviar'), ('tino.sticker')) AS t(patron)
+              WHERE a.code = 'ventas'
+                AND NOT EXISTS (
+                    SELECT 1 FROM ai_agent_tools x WHERE x.agent_id = a.id AND x.tool_pattern = t.patron
+                );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM ai_agent_tools
+               WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas')
+                 AND tool_pattern IN ('cotizacion.dato', 'cotizacion.nueva', 'cotizacion.enviar', 'tino.sticker');

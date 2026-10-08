@@ -87,4 +87,12 @@ interface ErpClient {
     /** Reemplaza las lineas: las que no vengan se eliminan; sin id son nuevas. */
     fun updateQuoteLines(tenantId: Long, conversationId: Long, quote: ErpQuote, lines: List<QuoteLineWrite>): ErpQuote =
         throw ErpException("updateQuoteLines no implementado")
+
+    /** El PDF de la cotizacion tal como lo genera el ERP; null si no existe. */
+    fun getQuotePdf(tenantId: Long, conversationId: Long, quoteId: Long): ByteArray? =
+        throw ErpException("getQuotePdf no implementado")
+
+    /** Anota en la bitacora de la cotizacion sin cambiar su estado. */
+    fun addQuoteNote(tenantId: Long, conversationId: Long, quoteId: Long, note: String): Unit =
+        throw ErpException("addQuoteNote no implementado")
 }

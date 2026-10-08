@@ -69,18 +69,18 @@ class WhatsAppRendererTest {
     }
 
     @Test
-    fun `una tarjeta se convierte en texto porque WhatsApp no la pinta`() {
+    fun `las tarjetas del panel no se mandan al cliente`() {
+        // Traen datos internos (id, estado, estimated); el texto del modelo ya
+        // resume y el detalle va en el PDF.
         val salida = renderer.render(
             listOf(
-                AgentEvent.Text("Su cotizacion:"),
-                AgentEvent.Card("quote_preview", linkedMapOf("number" to "COT-2026-0418", "total" to "18016.32")),
+                AgentEvent.Text("Su cotizacion esta lista."),
+                AgentEvent.Card("quote_preview", linkedMapOf("id" to 2, "number" to "COT-2026-0418", "estimated" to true)),
+                AgentEvent.Card("customer", linkedMapOf("id" to 1, "name" to "Cliente")),
             ),
             whatsapp,
         )
-        val texto = assertInstanceOf(WhatsAppOutbound.Text::class.java, salida.single())
-        assertTrue(texto.body.contains("Su cotizacion:"))
-        assertTrue(texto.body.contains("Number: COT-2026-0418"))
-        assertTrue(texto.body.contains("Total: 18016.32"))
+        assertEquals(listOf(WhatsAppOutbound.Text("Su cotizacion esta lista.")), salida)
     }
 
     @Test

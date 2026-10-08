@@ -108,8 +108,8 @@ open class WhatsAppQueueConsumer(
 
         try {
             val respuesta = turnos.handle(peticion, caller, entrantesRegistrados = wamids)
-            val capacidades = resolver.resolve(primero.cuenta, null).channel.capabilities
-            envio.entregar(primero.cuenta, primero.de, respuesta, capacidades)
+            val contexto = resolver.resolve(primero.cuenta, null)
+            envio.entregar(primero.cuenta, primero.de, respuesta, contexto.channel.capabilities, contexto.tenantId)
             grupo.forEach { cola.markDone(it.id) }
         } catch (e: AgentUnavailableException) {
             // Configuracion que falta: reintentar no la va a arreglar.
