@@ -2,6 +2,8 @@ package com.erp_maya.agent.channel.whatsapp.service
 
 import com.erp_maya.agent.api.dto.ConversationRef
 import com.erp_maya.agent.api.dto.TurnInput
+import com.erp_maya.agent.quote.PanelActionService
+import com.erp_maya.agent.quote.QuoteDecisionService
 import com.erp_maya.agent.api.dto.TurnRequest
 import com.erp_maya.agent.api.security.ApiClientConfiguration
 import com.erp_maya.agent.api.security.CallerCredentials
@@ -102,7 +104,7 @@ open class WhatsAppQueueConsumer(
         val peticion = TurnRequest(
             channel = CANAL,
             conversationRef = ConversationRef(externalId = primero.de, account = primero.cuenta),
-            input = TurnInput(type = "text", text = texto),
+            input = entrada(mensajes.mapNotNull { it.texto }, texto),
             idempotencyKey = llave(wamids),
         )
 
@@ -146,6 +148,22 @@ open class WhatsAppQueueConsumer(
          */
         fun llave(wamids: List<String>): String =
             wamids.singleOrNull() ?: ("rafaga:" + sha256(wamids.sorted().joinToString(",")).take(40))
+
+        /**
+         * Un boton de decision (`cot:accion:id:version`) llega como el texto
+         * del mensaje: se convierte en accion para que lo resuelva el codigo y
+         * no el modelo. Si en la misma rafaga hubo texto, gana el ultimo boton.
+         */
+        internal fun entrada(textos: List<String>, unido: String): TurnInput {
+            val boton = textos.lastOrNull { QuoteDecisionService.esBoton(it) }?.trim()
+                ?: return TurnInput(type = "text", text = unido)
+            if (textos.size > 1) log.info("rafaga con boton {}: se ignora el texto que lo acompaña", boton)
+            return TurnInput(
+                type = "action",
+                actionId = PanelActionService.ACCION_DECISION,
+                payload = mapOf("boton" to boton),
+            )
+        }
 
         private fun sha256(texto: String): String =
             MessageDigest.getInstance("SHA-256").digest(texto.toByteArray())

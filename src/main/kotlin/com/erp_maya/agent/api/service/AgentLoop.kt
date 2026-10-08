@@ -5,6 +5,7 @@ import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.prompt.domain.QuoteDraft
 import com.erp_maya.agent.quote.DraftStep
+import com.erp_maya.agent.quote.QuoteDecisionService
 import com.erp_maya.agent.quote.QuoteDraftService
 import com.erp_maya.agent.model.domain.ModelPrompt
 import com.erp_maya.agent.model.domain.ModelUsage
@@ -61,6 +62,7 @@ open class AgentLoop(
     private val gate: WriteGate,
     private val json: ObjectMapper,
     private val cotizaciones: QuoteDraftService,
+    private val decisiones: QuoteDecisionService,
 ) {
 
     open fun run(
@@ -89,6 +91,10 @@ open class AgentLoop(
         var latencia = 0
         var ultimoModelo = contexto.model
         var huboRespaldo = false
+        // Si alguna herramienta de cotizacion cambio algo en este turno. Sin
+        // eso, el modelo no puede anunciar un cambio (ver afirmaCambio).
+        var huboCambio = false
+        var revisado = false
 
         // +1 porque la ultima vuelta es la que redacta la respuesta ya con los
         // resultados en mano; si no, el tope se gastaria antes de contestar.
@@ -100,8 +106,28 @@ open class AgentLoop(
             huboRespaldo = huboRespaldo || salida.fallbackUsed
 
             if (!salida.completion.pideHerramientas) {
+                val texto = salida.completion.text.orEmpty()
+                // El modelo dijo "actualicé / registré / agregué…" sin haber
+                // ejecutado ninguna herramienta que lo hiciera: el cliente se
+                // quedaria creyendo algo que no paso. Se le devuelve UNA vez
+                // para que use la herramienta o corrija lo que dijo.
+                if (!huboCambio && !revisado && afirmaCambio(texto)) {
+                    revisado = true
+                    log.warn("conversation={} el modelo anuncio un cambio sin herramienta; se le pide corregir", conversationId)
+                    if (vuelta == contexto.agent.maxToolLoops) {
+                        return LoopOutcome(
+                            text = MENSAJE_SIN_RESOLVER, usage = uso, toolsCalled = ejecutadas,
+                            modelName = ultimoModelo.modelName, modelId = ultimoModelo.id,
+                            fallbackUsed = huboRespaldo, latencyMs = latencia, pendingWrite = pendiente,
+                            escalation = "CAMBIO_NO_EJECUTADO", cards = tarjetas.values.toList(), borrador = borrador,
+                        )
+                    }
+                    mensajes += PromptMessage(role = Role.ASSISTANT, content = texto)
+                    mensajes += PromptMessage(role = Role.USER, content = CORRECCION_SIN_HERRAMIENTA)
+                    return@repeat
+                }
                 return LoopOutcome(
-                    text = salida.completion.text.orEmpty(),
+                    text = texto,
                     usage = uso,
                     toolsCalled = ejecutadas,
                     modelName = ultimoModelo.modelName,
@@ -173,6 +199,7 @@ open class AgentLoop(
                     )
                 }
 
+                if (resultado is ToolResult.Ok && call.name in MUTANTES) huboCambio = true
                 pendiente = recordarPreview(resultado, call, estado, pendiente)
                 if (resultado is ToolResult.Ok) {
                     PanelCards.desde(resultado)?.let { tarjetas[it.card] = it }
@@ -258,6 +285,53 @@ open class AgentLoop(
                     playbook = playbook,
                 )
                 "cotizacion.nueva" -> cotizaciones.nueva(actual)
+                "cotizacion.listar" -> cotizaciones.listar(contexto, conversationId, actual)
+                "cotizacion.reabrir" -> cotizaciones.reabrir(
+                    contexto, conversationId, actual,
+                    quoteId = call.longArg("quoteId") ?: throw IllegalArgumentException("Falta quoteId (de cotizacion.listar)"),
+                    playbook = playbook,
+                )
+                "cotizacion.solicitudes" -> cotizaciones.solicitudes(
+                    contexto, conversationId, actual,
+                    quoteId = call.longArg("quoteId") ?: throw IllegalArgumentException("Falta quoteId (de cotizacion.listar)"),
+                )
+                "cotizacion.consultar" -> cotizaciones.consultar(
+                    contexto, conversationId, ref, actual,
+                    quoteId = call.longArg("quoteId") ?: throw IllegalArgumentException("Falta quoteId"),
+                    solicitudId = call.longArg("solicitudId")
+                        ?: throw IllegalArgumentException("Falta solicitudId (de cotizacion.solicitudes)"),
+                    pregunta = call.stringArg("pregunta") ?: throw IllegalArgumentException("Falta la pregunta"),
+                    tipo = call.stringArg("tipo"),
+                )
+                "cotizacion.solicitar_cambio" -> cotizaciones.solicitarCambio(
+                    contexto, conversationId, ref, actual,
+                    quoteId = call.longArg("quoteId") ?: throw IllegalArgumentException("Falta quoteId (de cotizacion.listar)"),
+                    tipo = call.stringArg("tipo") ?: throw IllegalArgumentException("Falta tipo"),
+                    productId = call.longArg("productId"),
+                    cantidad = call.decimalArg("cantidad"),
+                    descuento = call.decimalArg("descuento"),
+                    detalle = call.stringArg("detalle"),
+                )
+                // Aprobar o rechazar por texto: la confirmacion sale del
+                // mensaje del cliente, igual que en cotizacion.enviar.
+                "cotizacion.aprobar" -> decisiones.aprobarPorTexto(
+                    contexto, conversationId, actual,
+                    quoteId = call.longArg("quoteId") ?: throw IllegalArgumentException("Falta quoteId (de cotizacion.listar)"),
+                    confirmado = confirmado,
+                )
+                "cotizacion.rechazar" -> decisiones.rechazarPorTexto(
+                    contexto, conversationId, actual,
+                    quoteId = call.longArg("quoteId") ?: throw IllegalArgumentException("Falta quoteId (de cotizacion.listar)"),
+                    motivo = call.stringArg("motivo"),
+                    nota = call.stringArg("nota"),
+                    confirmado = confirmado,
+                )
+                "cotizacion.motivo_rechazo" -> decisiones.motivoRechazo(
+                    contexto, conversationId, actual,
+                    quoteId = call.longArg("quoteId") ?: throw IllegalArgumentException("Falta quoteId"),
+                    motivo = call.stringArg("motivo"),
+                    nota = call.stringArg("nota"),
+                )
                 "cotizacion.cantidad" -> cotizaciones.editarLinea(
                     contexto, conversationId, actual,
                     call.longArg("lineId") ?: throw IllegalArgumentException("Falta lineId"),
@@ -341,6 +415,41 @@ open class AgentLoop(
 
         const val MENSAJE_ESCALAMIENTO =
             "Voy a pasar esta solicitud con un compañero del equipo para confirmarla. En un momento le escriben."
+        /** Herramientas que cambian algo: solo tras una de ellas se puede anunciar un cambio. */
+        val MUTANTES = setOf(
+            "cotizacion.agregar", "cotizacion.cantidad", "cotizacion.cliente", "cotizacion.cliente_nuevo",
+            "cotizacion.dato", "cotizacion.nueva", "cotizacion.enviar", "cotizacion.reabrir",
+            "cotizacion.solicitar_cambio", "cotizacion.consultar", "cotizaciones.issue",
+            "cotizacion.aprobar", "cotizacion.rechazar", "cotizacion.motivo_rechazo",
+        )
+
+        /** Verbos con los que el modelo anuncia que hizo algo. */
+        private val AFIRMA = Regex(
+            // Solo la primera persona del pasado (con tilde): "¿quieres que cambie?"
+            // no es un anuncio; "cambié" si.
+            "(actualicé|agregué|añadí|registré|cambié|modifiqué|quité|eliminé|apliqué|reabrí|anoté|" +
+                "creé (la|tu|una) cotización|te envié)",
+            RegexOption.IGNORE_CASE,
+        )
+
+        /**
+         * "¡Listo!" al empezar, o "quedó/quedaron actualizado/confirmadas…": el
+         * cliente lo lee como hecho aunque no haya verbo en primera persona.
+         */
+        private val AFIRMA_HECHO = Regex(
+            "^\\W*listo\\b|(qued[oó]|quedaron|quedan) (actualizad|registrad|agregad|cambiad|confirmad|guardad)|" +
+                "\\b(confirmad[ao]s?|actualizad[ao]s?|registrad[ao]s?)[.!]",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
+        )
+
+        fun afirmaCambio(texto: String): Boolean = AFIRMA.containsMatchIn(texto) || AFIRMA_HECHO.containsMatchIn(texto)
+
+        const val CORRECCION_SIN_HERRAMIENTA =
+            "[Control del sistema] Tu respuesta dice que hiciste un cambio, pero en este turno no ejecutaste " +
+                "ninguna herramienta: no se cambio nada. Si el cliente pidio un cambio, ejecuta ahora la " +
+                "herramienta que corresponde (revisa el bloque de cotizacion en curso). Si no aplica, responde de " +
+                "nuevo sin afirmar cambios. No menciones este aviso."
+
         const val MENSAJE_SIN_RESOLVER =
             "No logré completar la consulta. Un compañero del equipo le va a dar seguimiento."
 

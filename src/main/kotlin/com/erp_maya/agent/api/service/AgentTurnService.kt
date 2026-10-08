@@ -239,7 +239,8 @@ open class AgentTurnService(
         val respuesta = TurnResponse(
             conversationId = idConversacion(conversationId),
             turnId = AgentTurn.publicId(turnId),
-            events = listOf(AgentEvent.Text(paso.mensaje)) + paso.tarjetas,
+            events = listOf(AgentEvent.Text(paso.mensaje)) + paso.tarjetas +
+                listOfNotNull(paso.opciones.takeIf { it.isNotEmpty() }?.let { AgentEvent.Choices(it) }),
             state = TurnState(summaryVersion = estado.summaryVersion),
         )
         conversaciones.registrarSaliente(conversationId, turnId, paso.mensaje)

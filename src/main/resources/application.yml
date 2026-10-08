@@ -47,6 +47,8 @@ agent:
         - productos.read
         - clientes.read
         - cotizaciones.read
+        # El ERP avisa al cliente cuando el vendedor aplica sus solicitudes.
+        - notificaciones.write
 
   # Resumen de la conversacion. El disparador normal es la inactividad; en
   # conversaciones largas y continuas hay ademas un respaldo dentro del turno

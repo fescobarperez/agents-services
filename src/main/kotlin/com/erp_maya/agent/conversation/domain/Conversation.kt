@@ -12,6 +12,17 @@ data class Conversation(
     val createdAt: Instant,
 )
 
+/** A quien y por donde se le escribe a una conversacion. */
+data class ConversationDestination(
+    val conversationId: Long,
+    val tenantId: Long,
+    val channelKind: String,
+    val accountRef: String,
+    val externalRef: String,
+    /** Ultimo mensaje del cliente: de aqui sale la ventana de 24 h de WhatsApp. */
+    val lastInboundAt: Instant?,
+)
+
 /** Estado de un turno. Refleja el CHECK de `agent_turns.status`. */
 enum class TurnStatus { PENDING, RUNNING, DONE, FAILED, ESCALATED }
 

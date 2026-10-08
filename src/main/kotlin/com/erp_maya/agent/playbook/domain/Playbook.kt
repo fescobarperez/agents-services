@@ -24,6 +24,8 @@ data class Playbook(
     val audiencias: Map<String, String> = mapOf("whatsapp" to AUDIENCIA_CLIENTE),
     val limites: Limites = Limites(),
     val cotizacion: CotizacionConfig = CotizacionConfig(),
+    /** Textos fijos de los avisos al cliente; las cifras las pone el ERP. */
+    val mensajes: Mensajes = Mensajes(),
 ) {
     fun audiencia(kindCanal: String): String = audiencias[kindCanal.lowercase()] ?: AUDIENCIA_CLIENTE
 
@@ -61,6 +63,7 @@ data class CotizacionConfig(
     ),
     val cierre: Cierre = Cierre(),
     val envio: Envio = Envio(),
+    val reapertura: Reapertura = Reapertura(),
 ) {
     /** Los que el cliente tiene que dar y se guardan con `cotizacion.dato`. */
     fun datosDelCliente(): List<DatoRequerido> = datosRequeridos.filter { it.origen != DatoRequerido.ORIGEN_SISTEMA }
@@ -105,4 +108,71 @@ data class Envio(
     /** El cliente tiene que confirmar en el mismo turno en que se pide el envio. */
     @JsonProperty("requiere_confirmacion") val requiereConfirmacion: Boolean = true,
     @JsonProperty("marcar_preliminar") val marcarPreliminar: Boolean = true,
+)
+
+/**
+ * Un prospecto vuelve a 'abierta' si el cliente lo pide y ningun vendedor lo
+ * abrio (eso lo valida el ERP). Ya tomado, el cliente deja solicitudes de cambio.
+ */
+@Serdeable
+data class Reapertura(
+    val permitida: Boolean = true,
+    /** El agente confirma con el cliente antes de reabrir. */
+    @JsonProperty("requiere_confirmacion") val requiereConfirmacion: Boolean = true,
+)
+
+@Serdeable
+data class Mensajes(
+    @JsonProperty("cambios_aplicados") val cambiosAplicados: PlantillaCambios = PlantillaCambios(),
+    @JsonProperty("cotizacion_enviada") val cotizacionEnviada: PlantillaEnviada = PlantillaEnviada(),
+    val decision: PlantillaDecision = PlantillaDecision(),
+)
+
+/**
+ * Textos de la decision del cliente sobre la cotizacion enviada. Variables:
+ * {cliente}, {numero}, {total}, {version}.
+ */
+@Serdeable
+data class PlantillaDecision(
+    val pregunta: String = "¿Qué te parece la cotización {numero}?",
+    @JsonProperty("confirmar_aprobar") val confirmarAprobar: String = "¿Confirmas que apruebas la cotización {numero} por {total}?",
+    @JsonProperty("confirmar_rechazar") val confirmarRechazar: String = "¿Confirmas que no deseas continuar con la cotización {numero}?",
+    val aprobada: String = "¡Gracias por preferirnos, {cliente}! Tu cotización {numero} quedó aprobada. " +
+        "Un asesor se pondrá en contacto contigo para coordinar los siguientes pasos.",
+    val rechazada: String = "Entendido, cerramos la cotización {numero}. Si quieres contarnos por qué, nos ayuda a " +
+        "mejorar. ¡Gracias por considerarnos!",
+    val comentar: String = "Cuéntame tus comentarios sobre la cotización {numero} y se los paso a tu asesor.",
+    val cancelar: String = "Perfecto, no hacemos cambios. ¿Qué te parece la cotización {numero}?",
+    @JsonProperty("version_anterior") val versionAnterior: String = "Ese mensaje es de una versión anterior. " +
+        "La vigente es la cotización {numero} (versión {version}). ¿Qué te parece?",
+    val vencida: String = "La cotización {numero} ya venció. Le aviso a tu asesor para que la renueve y te la envíe de nuevo.",
+    @JsonProperty("nueva_version") val nuevaVersion: String = "Tu asesor está preparando una nueva versión de la " +
+        "cotización {numero} con estos cambios. Te la enviaremos en cuanto esté lista.",
+)
+
+/**
+ * Aviso cuando el vendedor envia la cotizacion oficial (estado «enviada») a
+ * un cliente que la pidio por WhatsApp. Variables: {cliente}, {numero}, {total}.
+ */
+@Serdeable
+data class PlantillaEnviada(
+    val texto: String = "Hola {cliente}, tu asesor revisó tu cotización {numero} y te la envía oficialmente. " +
+        "Total: {total}. Te adjunto el documento.",
+    @JsonProperty("leyenda_pdf") val leyendaPdf: String = "Cotización oficial.",
+    /** Cuando el asesor la reenvia (misma version). */
+    val reenvio: String = "Hola {cliente}, te reenvío la cotización {numero}. Total: {total}.",
+)
+
+/**
+ * Aviso al cliente cuando el vendedor aplica sus solicitudes de cambio.
+ * Variables: {cliente}, {numero}, {total}, {detalle}, {respuesta}.
+ */
+@Serdeable
+data class PlantillaCambios(
+    val encabezado: String = "Hola {cliente}, tu asesor revisó tu cotización {numero}:",
+    val aplicada: String = "✅ {detalle}",
+    val ajustada: String = "✏️ {detalle} — {respuesta}",
+    val rechazada: String = "❌ {detalle} — {respuesta}",
+    val respondida: String = "💬 {detalle}: {respuesta}",
+    val cierre: String = "Nuevo total: {total}. Te adjunto la cotización actualizada.",
 )

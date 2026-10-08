@@ -88,6 +88,83 @@ class ToolCatalog {
             ),
         ),
         ToolDefinition(
+            name = "cotizacion.listar",
+            mode = ToolMode.READ,
+            description = "Lista las cotizaciones del cliente identificado con su estado, si puede reabrirse y si " +
+                "admite solicitudes de cambio. Usala cuando pregunte por una cotizacion anterior o quiera cambiarla.",
+        ),
+        ToolDefinition(
+            name = "cotizacion.reabrir",
+            mode = ToolMode.READ,
+            description = "Reabre una cotizacion que el cliente ya habia terminado para modificarla. Solo si " +
+                "cotizacion.listar dice puede_reabrirse=true y el cliente confirmo que quiere modificarla. Si un " +
+                "asesor ya la tomo, el sistema lo rechaza: usa cotizacion.solicitar_cambio.",
+            parameters = listOf(ToolParameter("quoteId", "integer", true, "quoteId de cotizacion.listar")),
+        ),
+        ToolDefinition(
+            name = "cotizacion.solicitar_cambio",
+            mode = ToolMode.READ,
+            description = "Registra un pedido de cambio sobre una cotizacion que ya revisa un asesor (no la " +
+                "modifica: el asesor decide). Una llamada por cada cambio. tipo: agregar, quitar, cantidad, " +
+                "descuento, condiciones u otro.",
+            parameters = listOf(
+                ToolParameter("quoteId", "integer", true, "quoteId de cotizacion.listar"),
+                ToolParameter("tipo", "string", true, "agregar | quitar | cantidad | descuento | condiciones | otro"),
+                ToolParameter("productId", "integer", false, "Producto (de productos.search) para agregar, quitar o cantidad"),
+                ToolParameter("cantidad", "number", false, "Cantidad para agregar o la nueva cantidad"),
+                ToolParameter("descuento", "number", false, "Porcentaje de descuento que pide el cliente"),
+                ToolParameter("detalle", "string", false, "Lo que pidio el cliente, con sus palabras"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.aprobar",
+            mode = ToolMode.READ,
+            description = "El cliente aprueba por texto la cotizacion que su asesor le ENVIO (estado enviada). " +
+                "Primero preguntale si confirma con numero y total; llamala cuando responda que si. El mensaje " +
+                "que devuelve es el cierre: despues el proceso de cotizacion termino.",
+            parameters = listOf(ToolParameter("quoteId", "integer", true, "quoteId de cotizacion.listar")),
+        ),
+        ToolDefinition(
+            name = "cotizacion.rechazar",
+            mode = ToolMode.READ,
+            description = "El cliente rechaza por texto la cotizacion enviada. Pide confirmacion antes. El motivo " +
+                "es OPCIONAL: pasalo solo si el cliente lo dijo, nunca lo exijas.",
+            parameters = listOf(
+                ToolParameter("quoteId", "integer", true, "quoteId de cotizacion.listar"),
+                ToolParameter("motivo", "string", false, "precio | plazo_entrega | compro_en_otro_lugar | ya_no_lo_necesita | otro"),
+                ToolParameter("nota", "string", false, "Lo que dijo el cliente, con sus palabras"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.motivo_rechazo",
+            mode = ToolMode.READ,
+            description = "Guarda el motivo que el cliente cuenta DESPUES de haber rechazado una cotizacion.",
+            parameters = listOf(
+                ToolParameter("quoteId", "integer", true, "quoteId de la cotizacion rechazada"),
+                ToolParameter("motivo", "string", false, "precio | plazo_entrega | compro_en_otro_lugar | ya_no_lo_necesita | otro"),
+                ToolParameter("nota", "string", false, "Lo que dijo el cliente, con sus palabras"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.solicitudes",
+            mode = ToolMode.READ,
+            description = "Las solicitudes de cambio de una cotizacion con su estado, el motivo y lo que respondio el " +
+                "asesor. Usala cuando el cliente pregunte que paso con lo que pidio o por que se rechazo.",
+            parameters = listOf(ToolParameter("quoteId", "integer", true, "quoteId de cotizacion.listar")),
+        ),
+        ToolDefinition(
+            name = "cotizacion.consultar",
+            mode = ToolMode.READ,
+            description = "Le pasa al asesor una pregunta del cliente sobre la respuesta a una solicitud (p. ej. por " +
+                "que se rechazo) cuando el motivo registrado no le basta. El asesor responde por este medio.",
+            parameters = listOf(
+                ToolParameter("quoteId", "integer", true, "quoteId de la cotizacion"),
+                ToolParameter("solicitudId", "integer", true, "solicitudId del aviso reciente o de cotizacion.solicitudes"),
+                ToolParameter("tipo", "string", true, "Tipo de esa solicitud (agregar, quitar, cantidad, descuento…), para verificar que es la correcta"),
+                ToolParameter("pregunta", "string", true, "Lo que pregunta el cliente, con sus palabras"),
+            ),
+        ),
+        ToolDefinition(
             name = "cotizacion.nueva",
             mode = ToolMode.READ,
             description = "Deja la cotizacion en curso como esta y empieza una nueva para el mismo cliente. Usala " +
@@ -105,9 +182,10 @@ class ToolCatalog {
         ToolDefinition(
             name = ENVIAR,
             mode = ToolMode.READ,
-            description = "Envia al cliente el PDF de la cotizacion en curso. Usala SOLO cuando el cliente confirme " +
-                "que la quiere recibir. Si sale como preliminar (prospecto), dile que un agente de ventas la " +
-                "revisara y aprobara y que le confirmara precios y existencias.",
+            description = "Da por terminada la cotizacion en curso (pasa a revision de un asesor) y le envia el PDF " +
+                "preliminar al cliente. Usala SOLO con el checklist completo y cuando el cliente confirme. Dile que " +
+                "un agente de ventas la revisara y aprobara. Despues ya no la modificas: si quiere cambiarla, " +
+                "cotizacion.reabrir (si nadie la tomo) o cotizacion.solicitar_cambio.",
         ),
         ToolDefinition(
             name = STICKER,
