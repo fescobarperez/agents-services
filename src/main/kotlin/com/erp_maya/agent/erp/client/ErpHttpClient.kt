@@ -9,6 +9,7 @@ import com.erp_maya.agent.erp.domain.ErpQuoteSummary
 import com.erp_maya.agent.erp.domain.QuoteLineWrite
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.IssuedQuote
+import com.erp_maya.agent.erp.domain.Dimensions
 import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.erp.domain.QuotePreview
@@ -40,7 +41,20 @@ data class ErpProduct(
     @Nullable val price: BigDecimal? = null,
     @Nullable val unit: String? = null,
     @Nullable val status: String? = null,
-)
+    @Nullable val height: BigDecimal? = null,
+    @Nullable val width: BigDecimal? = null,
+    @Nullable val depth: BigDecimal? = null,
+    @Nullable val dimensionUnit: String? = null,
+    @Nullable val tracksStock: Boolean? = null,
+    @Nullable val itemType: String? = null,
+) {
+    fun resumen() = ProductSummary(
+        id = id, sku = sku, name = name, unitPrice = price, unit = unit,
+        dimensions = Dimensions.de(height, width, depth), dimensionUnit = dimensionUnit,
+        // Sin control de existencias (o servicio): se hace bajo pedido.
+        madeToOrder = (tracksStock == false || itemType.equals("service", ignoreCase = true)).takeIf { it },
+    )
+}
 
 /** Fila de existencias de GET /api/stock: un producto en una sucursal/lote. */
 @Serdeable
@@ -69,7 +83,7 @@ data class CreateQuoteBody(
     @Nullable val clientName: String?,
     @Nullable val clientNit: String?,
     @Nullable val clientEmail: String?,
-    val validUntil: String,
+    @Nullable val validUntil: String?,
     val createdBy: String,
     val items: List<CreateQuoteItem>,
     val origin: String,
@@ -85,6 +99,7 @@ data class CreateQuoteItem(
     val quantity: BigDecimal,
     @Nullable val unitPrice: BigDecimal?,
     @Nullable val discount: BigDecimal?,
+    @Nullable val dimensions: Dimensions? = null,
 )
 
 /** POST /api/quotes/{id}/client-approve | client-reject (QuoteDtos.ClientDecisionRequest). */
@@ -114,6 +129,8 @@ data class UpdateQuoteBody(
     @Nullable val profitCalcType: String?,
     @Nullable val profitValue: BigDecimal?,
     val items: List<UpdateQuoteItem>,
+    /** null = el ERP conserva la que tenga. */
+    @Nullable val deliveryAddress: String? = null,
 )
 
 @Serdeable
@@ -125,6 +142,7 @@ data class UpdateQuoteItem(
     @Nullable val discount: BigDecimal?,
     @Nullable val productId: Long?,
     @Nullable val uom: String?,
+    @Nullable val dimensions: Dimensions? = null,
 )
 
 @Serdeable
@@ -159,7 +177,7 @@ open class ErpHttpClient(
             .queryParam("size", limit)
             .build()
         return pagina(HttpRequest.GET<Any>(uri), tenantId, conversationId, ErpProduct::class.java)
-            .map { ProductSummary(id = it.id, sku = it.sku, name = it.name, unitPrice = it.price, unit = it.unit) }
+            .map { it.resumen() }
     }
 
     override fun getStock(tenantId: Long, conversationId: Long, productId: Long): StockInfo? {
@@ -286,7 +304,7 @@ open class ErpHttpClient(
 
     override fun getProduct(tenantId: Long, conversationId: Long, productId: Long): ProductSummary? =
         uno(HttpRequest.GET<Any>("/api/products/$productId"), tenantId, conversationId, ErpProduct::class.java)
-            ?.let { ProductSummary(id = it.id, sku = it.sku, name = it.name, unitPrice = it.price, unit = it.unit) }
+            ?.resumen()
 
     override fun createProspectQuote(
         tenantId: Long,
@@ -302,9 +320,10 @@ open class ErpHttpClient(
             clientName = customer.name,
             clientNit = customer.nit,
             clientEmail = customer.email,
-            validUntil = LocalDate.now().plusDays(VIGENCIA_DIAS).toString(),
+            // Sin fecha: el ERP aplica la vigencia de la empresa (quotes.validity_days).
+            validUntil = null,
             createdBy = CREADO_POR,
-            items = lines.map { CreateQuoteItem(it.productId, it.description, it.uom, it.quantity, it.unitPrice, it.discount) },
+            items = lines.map { CreateQuoteItem(it.productId, it.description, it.uom, it.quantity, it.unitPrice, it.discount, it.dimensions) },
             // Con origin=agente el ERP la crea como 'prospecto'.
             origin = "agente",
             channel = channel,
@@ -384,7 +403,8 @@ open class ErpHttpClient(
             notes = quote.notes,
             profitCalcType = quote.profitCalcType,
             profitValue = quote.profitValue,
-            items = lines.map { UpdateQuoteItem(it.id, it.description, it.quantity, it.unitPrice, it.discount, it.productId, it.uom) },
+            items = lines.map { UpdateQuoteItem(it.id, it.description, it.quantity, it.unitPrice, it.discount, it.productId, it.uom, it.dimensions) },
+            deliveryAddress = quote.deliveryAddress,
         )
         return uno(HttpRequest.PUT("/api/quotes/${quote.id}", cuerpo), tenantId, conversationId, ErpQuote::class.java)
             ?: throw ErpException("El ERP no devolvio la cotizacion actualizada")

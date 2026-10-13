@@ -22,6 +22,22 @@ class ConfirmationDetectorTest {
     }
 
     @Test
+    fun `acepta confirmaciones naturales con cortesia o destino`() {
+        // Casos reales de WhatsApp que el detector anterior rechazaba.
+        listOf(
+            "Si me parece bien",
+            "Si envíala porfavor",
+            "Si envíaselo a un agente de ventas",
+            "¡Sí, por favor!",
+            "Ok, adelante",
+            "Está bien, mándala",
+            "Perfecto, gracias",
+        ).forEach {
+            assertTrue(detector.isConfirmation(it), "debio aceptar '$it'")
+        }
+    }
+
+    @Test
     fun `una frase con matices NO es confirmacion`() {
         // Es el caso que importa: "si" con una condicion detras no autoriza
         // emitir, y es exactamente lo que un detector permisivo dejaria pasar.
@@ -31,6 +47,11 @@ class ConfirmationDetectorTest {
             "si me confirmas el plazo lo acepto",
             "no",
             "todavia no",
+            "si, pero quita una",
+            "si envíala con 20 unidades",
+            "¿la envías?",
+            "gracias",
+            "por favor",
             "",
         ).forEach {
             assertFalse(detector.isConfirmation(it), "no debio aceptar '$it'")

@@ -56,7 +56,10 @@ class QuoteDecisionButtonsTest {
 
     @Test
     fun `los titulos caben en WhatsApp`() {
-        listOf("✅ Aprobar", "💬 Comentarios", "❌ Rechazar", "Sí, apruebo", "Sí, rechazar", "No")
+        val t = PlantillaDecision()
+        listOf(t.botonAprobar, t.botonComentar, t.botonRechazar, t.botonSiAprobar, t.botonSiRechazar, t.botonNo)
             .forEach { assertTrue(it.length <= 20, it) }
+        // Un titulo configurado demasiado largo se corta, no lo rechaza Meta.
+        assertEquals(20, QuoteDecisionService.titulo("Quiero aprobar esta cotización").length)
     }
 }

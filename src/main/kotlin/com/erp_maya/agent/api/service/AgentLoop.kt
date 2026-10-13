@@ -4,6 +4,7 @@ import com.erp_maya.agent.api.dto.AgentEvent
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.prompt.domain.QuoteDraft
+import com.erp_maya.agent.erp.domain.Dimensions
 import com.erp_maya.agent.quote.DraftStep
 import com.erp_maya.agent.quote.QuoteDecisionService
 import com.erp_maya.agent.quote.QuoteDraftService
@@ -274,6 +275,7 @@ open class AgentLoop(
                     cantidad = call.decimalArg("quantity")
                         ?: throw IllegalArgumentException("Falta quantity: indica la cantidad exacta que pidio el cliente"),
                     playbook = playbook,
+                    medidas = Dimensions.de(call.decimalArg("alto"), call.decimalArg("ancho"), call.decimalArg("profundidad")),
                 )
                 // `confirmado` sale del mensaje del cliente en este turno, no
                 // de lo que diga el modelo.
@@ -339,7 +341,10 @@ open class AgentLoop(
                 )
                 else -> throw IllegalArgumentException("La herramienta '${call.name}' no existe")
             }
-            ToolResult.Ok(call.name, paso.datos + ("mensaje" to paso.mensaje)) to paso
+            val datos = if (playbook.limites.soloTotal && playbook.audiencia(contexto.channel.kind) != Playbook.AUDIENCIA_VENDEDOR) {
+                sinPreciosDeLinea(paso.datos)
+            } else paso.datos
+            ToolResult.Ok(call.name, datos + ("mensaje" to paso.mensaje)) to paso
         } catch (e: ErpException) {
             log.warn("la herramienta {} fallo: {}", call.name, e.message)
             ToolResult.Failed(call.name, e.message ?: "El ERP no respondio") to null
@@ -415,6 +420,21 @@ open class AgentLoop(
 
         const val MENSAJE_ESCALAMIENTO =
             "Voy a pasar esta solicitud con un compañero del equipo para confirmarla. En un momento le escriben."
+        /**
+         * "Solo total": el modelo recibe las lineas sin precio unitario ni
+         * total de linea; el total de la cotizacion se queda (es lo unico que
+         * puede decir).
+         */
+        @Suppress("UNCHECKED_CAST")
+        fun sinPreciosDeLinea(datos: Map<String, Any?>): Map<String, Any?> {
+            val lineas = datos["lineas"] as? List<Map<String, Any?>> ?: return datos
+            return datos + mapOf(
+                "lineas" to lineas.map { it - setOf("precio_unitario", "total_linea") },
+                "importante" to "Da al cliente solo el total de la cotización, como estimado que confirma un asesor. " +
+                    "No menciones precios de catálogo ni por línea.",
+            )
+        }
+
         /** Herramientas que cambian algo: solo tras una de ellas se puede anunciar un cambio. */
         val MUTANTES = setOf(
             "cotizacion.agregar", "cotizacion.cantidad", "cotizacion.cliente", "cotizacion.cliente_nuevo",

@@ -105,6 +105,72 @@ open class WhatsAppSender(
     }
 
     /**
+     * Aviso con decision (lo dispara el ERP): UN mensaje con el PDF de la
+     * cotizacion como encabezado, el texto, el pie y los botones.
+     *
+     * `previo` es un texto que va antes cuando el contenido no cabe en el
+     * cuerpo del interactivo (1024 caracteres). Si el PDF no se puede subir,
+     * los botones salen igual, sin encabezado, y se avisa del PDF. Si Meta
+     * rechaza el interactivo se manda texto y PDF sueltos: el aviso no se
+     * pierde ni se reintenta entero. Devuelve el wamid del primer mensaje.
+     */
+    open fun avisarConDecision(
+        cuenta: String,
+        destinatario: String,
+        previo: String?,
+        cuerpo: String,
+        pie: String?,
+        documento: WhatsAppOutbound.Document?,
+        botones: List<Pair<String, String>>,
+        tenantId: Long,
+        conversationId: Long,
+        nota: String,
+    ): String {
+        val phoneNumberId = cuenta.removePrefix(PREFIJO)
+        require(phoneNumberId != cuenta) { "La cuenta '$cuenta' no es de WhatsApp" }
+        val primero = previo?.let { cliente.send(phoneNumberId, destinatario, WhatsAppOutbound.Text(it)) }
+
+        val pdf = documento?.let { pdfDelErp(phoneNumberId, it, tenantId, conversationId) }
+        if (documento != null && pdf == null) {
+            cliente.send(phoneNumberId, destinatario, WhatsAppOutbound.Text(AVISO_SIN_PDF))
+        }
+        val wamid = try {
+            cliente.send(phoneNumberId, destinatario, WhatsAppOutbound.Buttons(cuerpo, botones, pdf?.first, pie))
+                .also { log.info("aviso con decisión enviado a {}: {}", destinatario, botones.map { it.first }) }
+        } catch (e: Exception) {
+            log.error("Meta rechazó el aviso con botones para {}: {}; se manda texto y PDF sueltos", destinatario, e.message)
+            cliente.send(phoneNumberId, destinatario, WhatsAppOutbound.Text(cuerpo)).also {
+                pdf?.let { (doc, _) -> cliente.send(phoneNumberId, destinatario, doc) }
+            }
+        }
+        pdf?.second?.let { quoteId ->
+            runCatching { erp.addQuoteNote(tenantId, conversationId, quoteId, nota) }
+                .onFailure { log.warn("no se anotó el envío en la cotización {}: {}", quoteId, it.message) }
+        }
+        return primero ?: wamid
+    }
+
+    /** Baja el PDF del ERP y lo sube a Meta. Null si algo falla (se registra). */
+    private fun pdfDelErp(
+        phoneNumberId: String,
+        doc: WhatsAppOutbound.Document,
+        tenantId: Long,
+        conversationId: Long,
+    ): Pair<WhatsAppOutbound.DocumentMedia, Long>? {
+        val quoteId = ID_COTIZACION.find(doc.url)?.groupValues?.get(1)?.toLongOrNull()
+        return try {
+            requireNotNull(quoteId) { "ruta de documento inesperada: ${doc.url}" }
+            val bytes = erp.getQuotePdf(tenantId, conversationId, quoteId)
+                ?: error("el ERP no encontró la cotización $quoteId")
+            val mediaId = cliente.subirMedia(phoneNumberId, bytes, "application/pdf", doc.filename)
+            WhatsAppOutbound.DocumentMedia(mediaId, doc.filename, null) to quoteId
+        } catch (e: Exception) {
+            log.error("no se pudo preparar el PDF de la cotización {}", quoteId, e)
+            null
+        }
+    }
+
+    /**
      * El PDF de la cotizacion: se baja del ERP con el bot, se sube a Meta y se
      * manda como documento. Si algo falla se avisa al cliente con un texto en
      * vez de reventar: un reintento de la cola reenviaria todo el turno.

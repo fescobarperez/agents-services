@@ -45,7 +45,9 @@ open class PlaybookService(
 
         return runCatching { json.readValue(crudo, Playbook::class.java) }
             .onFailure { log.error("playbook ilegible para {} / empresa {}: se usa el de por defecto", agentCode, tenantId, it) }
-            .getOrNull() ?: Playbook()
+            .getOrNull()
+            ?.also { log.info("playbook de {} / empresa {} cargado (negocio: {})", agentCode, tenantId, if (it.negocio != null) "si" else "no") }
+            ?: Playbook()
     }
 
     private companion object {

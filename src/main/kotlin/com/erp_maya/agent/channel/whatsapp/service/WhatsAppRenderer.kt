@@ -7,7 +7,16 @@ import jakarta.inject.Singleton
 /** Un mensaje ya listo para la API de WhatsApp. */
 sealed interface WhatsAppOutbound {
     data class Text(val body: String) : WhatsAppOutbound
-    data class Buttons(val body: String, val buttons: List<Pair<String, String>>) : WhatsAppOutbound
+    /**
+     * Botones de respuesta (max. 3). Opcionalmente con un documento ya subido
+     * a Meta como encabezado (el PDF de la cotizacion) y un pie corto.
+     */
+    data class Buttons(
+        val body: String,
+        val buttons: List<Pair<String, String>>,
+        val documento: DocumentMedia? = null,
+        val pie: String? = null,
+    ) : WhatsAppOutbound
     data class Document(val url: String, val filename: String) : WhatsAppOutbound
 
     /** Sticker ya subido a Meta; lo agrega [WhatsAppSender], no el renderer. */

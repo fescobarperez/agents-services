@@ -32,6 +32,8 @@ data class ChangesAppliedPayload(
     val version: Int = 0,
     /** Reenvio manual de la misma version desde el ERP. */
     val resend: Boolean = false,
+    /** Vigencia (yyyy-MM-dd) para el pie del mensaje con botones. */
+    @Nullable val validUntil: String? = null,
 )
 
 @Serdeable

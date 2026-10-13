@@ -5,6 +5,8 @@ import com.erp_maya.agent.erp.client.ErpClient
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
+import com.erp_maya.agent.playbook.domain.Playbook
+import com.erp_maya.agent.playbook.service.PlaybookService
 import com.erp_maya.agent.tools.domain.ToolCall
 import com.erp_maya.agent.tools.domain.ToolResult
 import jakarta.inject.Singleton
@@ -23,6 +25,7 @@ open class ToolExecutor(
     private val erp: ErpClient,
     private val catalogo: ToolCatalog,
     private val gate: WriteGate,
+    private val playbooks: PlaybookService,
 ) {
 
     open fun execute(
@@ -62,14 +65,19 @@ open class ToolExecutor(
     ): Any? {
         val t = contexto.tenantId
         return when (call.name) {
-            "productos.search" -> conExistencias(
-                t, conversationId,
-                erp.searchProducts(
+            "productos.search" -> {
+                val encontrados = conExistencias(
                     t, conversationId,
-                    call.stringArg("query").orEmpty(),
-                    (call.longArg("limit") ?: 10L).toInt().coerceIn(1, MAX_RESULTADOS),
-                ),
-            )
+                    erp.searchProducts(
+                        t, conversationId,
+                        call.stringArg("query").orEmpty(),
+                        (call.longArg("limit") ?: 10L).toInt().coerceIn(1, MAX_RESULTADOS),
+                    ),
+                )
+                // Con "solo total" el modelo ni recibe el precio de catalogo:
+                // no puede decir una cifra que luego no coincida con el PDF.
+                if (ocultarPrecios(contexto)) encontrados.map { it.copy(unitPrice = null) } else encontrados
+            }
             "productos.stock" -> erp.getStock(t, conversationId, requireId(call, "productId"))
             "clientes.find" -> erp.findCustomerByPhone(t, conversationId, call.stringArg("phone").orEmpty())
             "clientes.buscar" -> erp.searchCustomers(t, conversationId, call.stringArg("query").orEmpty())
@@ -109,8 +117,13 @@ open class ToolExecutor(
      * contestar "hay stock" sin otra vuelta, y el panel la muestra. Si la
      * consulta de un producto falla, ese queda sin dato: no tumba la busqueda.
      */
+    private fun ocultarPrecios(contexto: ExecutionContext): Boolean =
+        ocultaPrecios(playbooks.para(contexto), contexto.channel.kind)
+
     private fun conExistencias(t: Long, conversationId: Long, productos: List<ProductSummary>): List<ProductSummary> =
         productos.map { p ->
+            // Bajo pedido: no hay existencias que consultar.
+            if (p.madeToOrder == true) return@map p
             val stock = runCatching { erp.getStock(t, conversationId, p.id) }
                 .onFailure { log.debug("sin existencia para {}: {}", p.id, it.message) }
                 .getOrNull()
@@ -126,3 +139,10 @@ open class ToolExecutor(
         private val log = LoggerFactory.getLogger(ToolExecutor::class.java)
     }
 }
+
+/**
+ * El cliente no debe oír precios de catálogo cuando el playbook solo permite
+ * el total (`limites.mostrar_precios = "total"`). Un vendedor sí los ve.
+ */
+internal fun ocultaPrecios(playbook: Playbook, kindCanal: String): Boolean =
+    playbook.limites.soloTotal && playbook.audiencia(kindCanal) != Playbook.AUDIENCIA_VENDEDOR
