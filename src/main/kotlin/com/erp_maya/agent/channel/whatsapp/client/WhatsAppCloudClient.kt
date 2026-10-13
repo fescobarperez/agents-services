@@ -88,7 +88,11 @@ open class WhatsAppCloudClient(
             type = "interactive",
             interactive = WaSendInteractive(
                 type = "button",
-                body = WaSendBody(m.body),
+                header = m.documento?.let {
+                    WaSendHeader(type = "document", document = WaSendDocument(id = it.mediaId, filename = it.filename))
+                },
+                body = WaSendBody(m.body.take(LARGO_CUERPO)),
+                footer = m.pie?.takeIf { it.isNotBlank() }?.let { WaSendBody(it.take(LARGO_PIE)) },
                 action = WaSendAction(m.buttons.map { (id, titulo) -> WaSendButton(reply = WaSendReply(id, titulo)) }),
             ),
         )
@@ -175,8 +179,24 @@ data class WaSendText(val body: String)
 @Serdeable
 data class WaSendBody(val text: String)
 
+/** Encabezado de un interactivo; aqui solo se usa el de documento (el PDF). */
 @Serdeable
-data class WaSendInteractive(val type: String, val body: WaSendBody, val action: WaSendAction)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class WaSendHeader(val type: String, @Nullable val document: WaSendDocument? = null)
+
+@Serdeable
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class WaSendInteractive(
+    val type: String,
+    @Nullable val header: WaSendHeader? = null,
+    val body: WaSendBody,
+    @Nullable val footer: WaSendBody? = null,
+    val action: WaSendAction,
+)
+
+/** Limites de Meta para un interactivo con botones. */
+private const val LARGO_CUERPO = 1024
+private const val LARGO_PIE = 60
 
 @Serdeable
 data class WaSendAction(val buttons: List<WaSendButton>)

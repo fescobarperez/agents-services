@@ -4,6 +4,37 @@ import io.micronaut.core.annotation.Nullable
 import io.micronaut.serde.annotation.Serdeable
 import java.math.BigDecimal
 
+/**
+ * Alto × ancho × profundidad (QuoteDtos.Dimensions del ERP). En el producto es
+ * la medida estandar; en una linea, la que pidio el cliente.
+ */
+@Serdeable
+data class Dimensions(
+    @Nullable val height: BigDecimal? = null,
+    @Nullable val width: BigDecimal? = null,
+    @Nullable val depth: BigDecimal? = null,
+) {
+    /** Funcion y no propiedad: una propiedad se serializaria al ERP. */
+    fun vacia(): Boolean = height == null && width == null && depth == null
+
+    /** Igualdad por valor numerico: 1.8 y 1.800 son la misma medida. */
+    fun igualA(otra: Dimensions?): Boolean {
+        fun eq(a: BigDecimal?, b: BigDecimal?) = if (a == null || b == null) a == b else a.compareTo(b) == 0
+        val o = otra ?: Dimensions()
+        return eq(height, o.height) && eq(width, o.width) && eq(depth, o.depth)
+    }
+
+    /** "2 × 1.5 × 0.6 m" */
+    fun texto(unidad: String? = null): String =
+        listOfNotNull(height, width, depth).joinToString(" × ") { it.stripTrailingZeros().toPlainString() } +
+            " " + (unidad ?: "m")
+
+    companion object {
+        fun de(height: BigDecimal?, width: BigDecimal?, depth: BigDecimal?): Dimensions? =
+            Dimensions(height, width, depth).takeUnless { it.vacia() }
+    }
+}
+
 @Serdeable
 data class ProductSummary(
     val id: Long,
@@ -11,6 +42,14 @@ data class ProductSummary(
     val name: String,
     @Nullable val unitPrice: BigDecimal? = null,
     @Nullable val unit: String? = null,
+    /** Medida estandar del catalogo (alto, ancho, profundidad), si la tiene. */
+    @Nullable val dimensions: Dimensions? = null,
+    @Nullable val dimensionUnit: String? = null,
+    /**
+     * Se fabrica bajo pedido (el producto no controla existencias): no se
+     * consulta stock ni se habla de disponibilidad, sino de tiempo de entrega.
+     */
+    @Nullable val madeToOrder: Boolean? = null,
     /** Existencia total; la llena la herramienta de busqueda, no el ERP. */
     @Nullable val available: BigDecimal? = null,
     /** Sucursal, solo si todo el stock esta en una. */
@@ -82,6 +121,14 @@ data class ErpQuoteItem(
     @Nullable val unitPrice: BigDecimal? = null,
     @Nullable val discount: BigDecimal? = null,
     @Nullable val lineTotal: BigDecimal? = null,
+    /** Medida pedida y la del catalogo al cotizar. */
+    @Nullable val dimensions: Dimensions? = null,
+    @Nullable val baseDimensions: Dimensions? = null,
+    @Nullable val dimensionUnit: String? = null,
+    val customSize: Boolean = false,
+    val showToClient: Boolean = true,
+    /** null · 'calculated' (precio por medida) · 'review' (lo cotiza el asesor). */
+    @Nullable val sizePricing: String? = null,
 )
 
 /** Cotizacion del ERP (GET/POST/PUT /api/quotes). Solo lo que el agente usa. */
@@ -103,6 +150,10 @@ data class ErpQuote(
     val items: List<ErpQuoteItem> = emptyList(),
     /** Sube con cada envio: la decision del cliente se ata a esta version. */
     val sentVersion: Int = 0,
+    /** 'detailed' | 'global': con global el cliente solo conoce el total. */
+    @Nullable val priceDisplay: String? = null,
+    /** Direccion de entrega / instalacion (campo propio, sale en el PDF). */
+    @Nullable val deliveryAddress: String? = null,
 )
 
 /** Linea para crear (productId) o editar (id) una cotizacion. */
@@ -114,6 +165,8 @@ data class QuoteLineWrite(
     val unitPrice: BigDecimal? = null,
     val discount: BigDecimal? = null,
     val uom: String? = null,
+    /** Medida pedida; null = la del catalogo (nueva) o la que ya tiene (existente). */
+    val dimensions: Dimensions? = null,
 )
 
 /** Fallo hablando con maya-erp-services. */

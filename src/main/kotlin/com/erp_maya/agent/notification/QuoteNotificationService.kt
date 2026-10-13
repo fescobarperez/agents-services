@@ -5,6 +5,7 @@ import com.erp_maya.agent.channel.whatsapp.service.WhatsAppSender
 import com.erp_maya.agent.context.service.ExecutionContextResolver
 import com.erp_maya.agent.conversation.service.ConversationService
 import com.erp_maya.agent.playbook.domain.PlantillaCambios
+import com.erp_maya.agent.playbook.domain.PlantillaDecision
 import com.erp_maya.agent.playbook.service.PlaybookService
 import com.erp_maya.agent.prompt.domain.AvisoCambios
 import com.erp_maya.agent.prompt.domain.AvisoItem
@@ -64,31 +65,40 @@ open class QuoteNotificationService(
             WhatsAppOutbound.Document(url = it, filename = "Cotizacion-${n.payload.docNumber}.pdf")
         }
 
+        val d = mensajes.decision
+        val nota = when {
+            n.kind == KIND_CAMBIOS -> "PDF actualizado enviado al cliente por WhatsApp"
+            n.payload.resend -> "PDF reenviado al cliente por WhatsApp"
+            else -> "PDF oficial enviado al cliente por WhatsApp"
+        }
+
         val texto = when (n.kind) {
             KIND_ENVIADA -> {
                 val e = mensajes.cotizacionEnviada
                 val t = componerEnviada(if (n.payload.resend) e.reenvio else e.texto, n.payload)
-                whatsapp.avisar(
-                    destino.accountRef, destino.externalRef, t, documento, destino.tenantId, conversationId,
-                    leyenda = mensajes.cotizacionEnviada.leyendaPdf,
-                    nota = if (n.payload.resend) "PDF reenviado al cliente por WhatsApp" else "PDF oficial enviado al cliente por WhatsApp",
-                    botones = botonesDecision(mensajes.decision.pregunta, n.payload),
-                )
+                if (n.payload.version > 0) {
+                    conDecision(destino.accountRef, destino.externalRef, t, n.payload, documento, d, destino.tenantId, conversationId, nota)
+                } else {
+                    log.warn("aviso de {} sin version enviada: sale sin botones", n.payload.docNumber)
+                    whatsapp.avisar(
+                        destino.accountRef, destino.externalRef, t, documento, destino.tenantId, conversationId,
+                        leyenda = e.leyendaPdf, nota = nota,
+                    )
+                }
                 t
             }
             KIND_CAMBIOS -> {
                 // Cambios en las lineas de una enviada: vuelve a borrador y el
                 // cierre anuncia la version nueva (sin PDF: aun no existe).
                 val plantilla = if (n.payload.newVersionPending) {
-                    mensajes.cambiosAplicados.copy(cierre = mensajes.decision.nuevaVersion)
+                    mensajes.cambiosAplicados.copy(cierre = d.nuevaVersion)
                 } else mensajes.cambiosAplicados
                 val t = componer(plantilla, n.payload)
-                whatsapp.avisar(
-                    destino.accountRef, destino.externalRef, t, documento, destino.tenantId, conversationId,
-                    botones = if (n.payload.askDecision && !n.payload.newVersionPending) {
-                        botonesDecision(mensajes.decision.pregunta, n.payload)
-                    } else null,
-                )
+                if (n.payload.askDecision && !n.payload.newVersionPending && n.payload.version > 0) {
+                    conDecision(destino.accountRef, destino.externalRef, t, n.payload, documento, d, destino.tenantId, conversationId, nota)
+                } else {
+                    whatsapp.avisar(destino.accountRef, destino.externalRef, t, documento, destino.tenantId, conversationId)
+                }
                 recordarAviso(conversationId, n.payload)
                 t
             }
@@ -101,14 +111,26 @@ open class QuoteNotificationService(
         return QuoteNotificationResponse(true)
     }
 
-    /** Pregunta y los tres botones atados a la version enviada. */
-    private fun botonesDecision(pregunta: String, p: ChangesAppliedPayload): WhatsAppOutbound.Buttons? {
-        if (p.version <= 0) {
-            log.warn("aviso de {} sin version enviada (version={}): no se muestran botones", p.docNumber, p.version)
-            return null
-        }
-        val cuerpo = QuoteDecisionService.llenar(pregunta, p.clientName, p.docNumber, p.total, p.version)
-        return WhatsAppOutbound.Buttons(cuerpo, decisiones.botones(p.quoteId, p.version).map { it.id to it.label })
+    /**
+     * Un solo mensaje: el PDF como encabezado, el texto y la pregunta en el
+     * cuerpo, la vigencia en el pie y los tres botones atados a la version.
+     */
+    private fun conDecision(
+        cuenta: String, destinatario: String, texto: String, p: ChangesAppliedPayload,
+        documento: WhatsAppOutbound.Document?, d: PlantillaDecision, tenantId: Long, conversationId: Long, nota: String,
+    ) {
+        val (previo, cuerpo) = cuerpoDecision(texto, QuoteDecisionService.llenar(d.pregunta, p.clientName, p.docNumber, p.total, p.version))
+        whatsapp.avisarConDecision(
+            cuenta, destinatario,
+            previo = previo,
+            cuerpo = cuerpo,
+            pie = pie(d.pie, p.validUntil),
+            documento = documento,
+            botones = decisiones.botones(p.quoteId, p.version, d).map { it.id to it.label },
+            tenantId = tenantId,
+            conversationId = conversationId,
+            nota = nota,
+        )
     }
 
     /** Deja el aviso en el estado del hilo, con los ids, para el siguiente turno. */
@@ -131,6 +153,22 @@ open class QuoteNotificationService(
         const val KIND_CAMBIOS = "cambios_aplicados"
         const val KIND_ENVIADA = "cotizacion_enviada"
         private val VENTANA: Duration = Duration.ofHours(24)
+
+        /** Cuerpo maximo de un interactivo en WhatsApp. */
+        private const val LARGO_CUERPO = 1024
+
+        /**
+         * Texto y pregunta juntos si caben en el cuerpo del interactivo; si no,
+         * el texto va antes como mensaje aparte y el cuerpo es solo la pregunta.
+         */
+        fun cuerpoDecision(texto: String, pregunta: String): Pair<String?, String> {
+            val junto = "$texto\n\n$pregunta"
+            return if (junto.length <= LARGO_CUERPO) null to junto else texto to pregunta
+        }
+
+        /** "Válida hasta el {vigencia}" con la fecha larga; sin vigencia no hay pie. */
+        fun pie(molde: String, validUntil: String?): String? =
+            QuoteDecisionService.vigencia(validUntil)?.let { molde.replace("{vigencia}", it) }
 
         /** El mensaje de formato fijo. Publico para probarlo sin infraestructura. */
         fun componer(p: PlantillaCambios, datos: ChangesAppliedPayload): String {

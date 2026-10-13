@@ -53,7 +53,21 @@ data class Limites(
     @JsonProperty("puede_ofrecer_descuentos") val puedeOfrecerDescuentos: Boolean = false,
     /** Temas que el agente no resuelve: los deriva a una persona. */
     @JsonProperty("fuera_de_alcance") val fueraDeAlcance: List<String> = emptyList(),
-)
+    /**
+     * Qué precios puede decir el agente al cliente: "unitario" (precios de
+     * catálogo y por línea, como siempre) o "total" (solo el total de la
+     * cotización que calcula el ERP, con ganancia, cargos y redondeo).
+     */
+    @JsonProperty("mostrar_precios") val mostrarPrecios: String = PRECIOS_UNITARIO,
+) {
+    /** El cliente solo debe oír el total de la cotización. */
+    val soloTotal: Boolean get() = mostrarPrecios.equals(PRECIOS_TOTAL, ignoreCase = true)
+
+    companion object {
+        const val PRECIOS_UNITARIO = "unitario"
+        const val PRECIOS_TOTAL = "total"
+    }
+}
 
 @Serdeable
 data class CotizacionConfig(
@@ -130,11 +144,22 @@ data class Mensajes(
 
 /**
  * Textos de la decision del cliente sobre la cotizacion enviada. Variables:
- * {cliente}, {numero}, {total}, {version}.
+ * {cliente}, {numero}, {total}, {version}; en `pie`, {vigencia}.
+ *
+ * La pregunta va al final del mensaje que lleva el PDF como encabezado; el pie
+ * (max. 60 caracteres) y los titulos de los botones (max. 20) los recorta el
+ * codigo si se pasan.
  */
 @Serdeable
 data class PlantillaDecision(
-    val pregunta: String = "¿Qué te parece la cotización {numero}?",
+    val pregunta: String = "¿Cómo deseas continuar?",
+    val pie: String = "Válida hasta el {vigencia}",
+    @JsonProperty("boton_aprobar") val botonAprobar: String = "Aprobar",
+    @JsonProperty("boton_comentar") val botonComentar: String = "Tengo comentarios",
+    @JsonProperty("boton_rechazar") val botonRechazar: String = "Rechazar",
+    @JsonProperty("boton_si_aprobar") val botonSiAprobar: String = "Sí, apruebo",
+    @JsonProperty("boton_si_rechazar") val botonSiRechazar: String = "Sí, rechazar",
+    @JsonProperty("boton_no") val botonNo: String = "No",
     @JsonProperty("confirmar_aprobar") val confirmarAprobar: String = "¿Confirmas que apruebas la cotización {numero} por {total}?",
     @JsonProperty("confirmar_rechazar") val confirmarRechazar: String = "¿Confirmas que no deseas continuar con la cotización {numero}?",
     val aprobada: String = "¡Gracias por preferirnos, {cliente}! Tu cotización {numero} quedó aprobada. " +
@@ -156,11 +181,11 @@ data class PlantillaDecision(
  */
 @Serdeable
 data class PlantillaEnviada(
-    val texto: String = "Hola {cliente}, tu asesor revisó tu cotización {numero} y te la envía oficialmente. " +
-        "Total: {total}. Te adjunto el documento.",
+    val texto: String = "Hola {cliente}, tu asesor preparó tu cotización *{numero}*.\nTotal: *{total}*",
+    /** Solo si el PDF sale como documento suelto (sin botones). */
     @JsonProperty("leyenda_pdf") val leyendaPdf: String = "Cotización oficial.",
     /** Cuando el asesor la reenvia (misma version). */
-    val reenvio: String = "Hola {cliente}, te reenvío la cotización {numero}. Total: {total}.",
+    val reenvio: String = "Hola {cliente}, te reenvío tu cotización *{numero}*.\nTotal: *{total}*",
 )
 
 /**

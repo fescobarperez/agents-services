@@ -109,4 +109,6 @@ data class DraftLine(
     val quantity: BigDecimal,
     @Nullable val unitPrice: BigDecimal? = null,
     @Nullable val unit: String? = null,
+    /** Medida pedida si difiere de la del catalogo. */
+    @Nullable val dimensions: com.erp_maya.agent.erp.domain.Dimensions? = null,
 )

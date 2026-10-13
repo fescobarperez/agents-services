@@ -5,6 +5,7 @@ import com.erp_maya.agent.api.service.PanelCards
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.client.ErpClient
 import com.erp_maya.agent.erp.domain.CustomerSummary
+import com.erp_maya.agent.erp.domain.Dimensions
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.ErpQuote
 import com.erp_maya.agent.erp.domain.ProductSummary
@@ -56,11 +57,18 @@ open class QuoteDraftService(private val erp: ErpClient) {
         sku: String?,
         cantidad: BigDecimal,
         playbook: Playbook = Playbook(),
+        /** Medida que pide el cliente; null = la del catalogo. */
+        medidas: Dimensions? = null,
     ): DraftStep {
         require(cantidad.signum() > 0) { "La cantidad debe ser mayor que cero" }
         val t = contexto.tenantId
         val producto = resolverProducto(t, conversationId, productId, sku)
             ?: throw ErpException("No encontre el producto ${sku ?: productId} en el catalogo")
+        listOfNotNull(medidas?.height, medidas?.width, medidas?.depth).forEach {
+            require(it.signum() > 0) { "Las medidas deben ser mayores que cero" }
+        }
+        // Igual a la del catalogo = medida estandar: no se manda como especial.
+        val pedida = medidas?.takeUnless { it.vacia() || it.igualA(producto.dimensions) }
         val borrador = actual ?: QuoteDraft()
 
         // Hay una cotizacion recien cerrada y ninguna abierta: crear otra aqui
@@ -76,7 +84,7 @@ open class QuoteDraftService(private val erp: ErpClient) {
 
         // Sin cliente: la linea espera y se pide el cliente.
         if (borrador.customerId == null) {
-            val pendientes = sumar(borrador.pendientes, producto, cantidad)
+            val pendientes = sumar(borrador.pendientes, producto, cantidad, pedida)
             val nuevo = borrador.copy(pendientes = pendientes)
             return DraftStep(
                 borrador = nuevo,
@@ -88,11 +96,11 @@ open class QuoteDraftService(private val erp: ErpClient) {
 
         val nueva = borrador.quoteId == null
         val cotizacion = if (nueva) {
-            crear(contexto, conversationId, conversationRef, borrador, sumar(borrador.pendientes, producto, cantidad))
+            crear(contexto, conversationId, conversationRef, borrador, sumar(borrador.pendientes, producto, cantidad, pedida))
         } else {
             val vigente = erp.getQuote(t, conversationId, borrador.quoteId)
                 ?: throw ErpException("La cotización ${borrador.quoteNumber} ya no existe en el ERP")
-            val lineas = lineasCon(vigente, producto, cantidad)
+            val lineas = lineasCon(vigente, producto, cantidad, pedida)
             playbook.limites.lineasMaximas?.let { tope ->
                 if (lineas.size > tope) {
                     throw ErpException("La cotización llegó al máximo de $tope líneas; un agente de ventas debe atender el resto")
@@ -100,7 +108,8 @@ open class QuoteDraftService(private val erp: ErpClient) {
             }
             erp.updateQuoteLines(t, conversationId, vigente, lineas)
         }
-        val paso = listo(borrador, cotizacion, "Agregué ${producto.name} a la cotización ${cotizacion.docNumber}.")
+        val enMedida = pedida?.let { " en medida especial ${it.texto(producto.dimensionUnit)}" } ?: ""
+        val paso = listo(borrador, cotizacion, "Agregué ${producto.name}$enMedida a la cotización ${cotizacion.docNumber}.")
         // Si la cotizacion ya existia, la cantidad se SUMA a la que tenia: el
         // modelo tiene que saberlo para no anunciar solo lo que pidio ahora.
         return if (nueva) paso else paso.copy(datos = paso.datos + ("se_sumo_a_cotizacion_existente" to true))
@@ -499,19 +508,18 @@ open class QuoteDraftService(private val erp: ErpClient) {
         }
         if (playbook.cotizacion.envio.requiereConfirmacion && !confirmado) {
             throw ErpException(
-                "El cliente no confirmó el envío en este mensaje. Muéstrale el resumen y pregúntale si se la envías.",
+                "SIN_CONFIRMACION: el último mensaje del cliente no se reconoció como un sí claro. No es un error " +
+                    "técnico: no lo digas así ni vuelvas a llamar esta herramienta en este turno. Sin repetir el " +
+                    "resumen completo, pídele que responda solo «sí» para enviarla.",
             )
         }
         var cotizacion = erp.getQuote(contexto.tenantId, conversationId, quoteId)
             ?: throw ErpException("La cotización ${actual.quoteNumber} ya no existe en el ERP")
-        playbook.limites.montoMaximo?.let { tope ->
-            if ((cotizacion.total ?: BigDecimal.ZERO) > tope) {
-                throw ErpException(
-                    "La cotización supera el monto que el asistente puede enviar. Dile al cliente que un agente de " +
-                        "ventas la revisará y se la hará llegar.",
-                )
-            }
-        }
+        // Superar el monto maximo ya no frena el envio: la cotizacion SIEMPRE
+        // pasa a prospecto (para que el vendedor la vea en su lista) y el
+        // cliente SIEMPRE recibe el PDF preliminar. El tope solo la marca para
+        // revision prioritaria en la bitacora del ERP.
+        val superaTope = playbook.limites.montoMaximo?.let { (cotizacion.total ?: BigDecimal.ZERO) > it } == true
         // Los datos que dio el cliente quedan en las notas: el vendedor los ve
         // y salen en el PDF.
         cotizacion = conNotas(contexto, conversationId, cotizacion, actual, playbook)
@@ -519,6 +527,15 @@ open class QuoteDraftService(private val erp: ErpClient) {
         // revisa un vendedor y el agente ya no la edita.
         if (cotizacion.status.equals(ESTADO_ABIERTA, ignoreCase = true)) {
             cotizacion = erp.finalizeQuote(contexto.tenantId, conversationId, quoteId)
+        }
+
+        if (superaTope) {
+            runCatching {
+                erp.addQuoteNote(
+                    contexto.tenantId, conversationId, quoteId,
+                    "Revisión prioritaria: el total supera el monto máximo del asistente (Q ${playbook.limites.montoMaximo?.toPlainString()})",
+                )
+            }.onFailure { log.warn("no se anotó el tope en {}: {}", cotizacion.docNumber, it.message) }
         }
 
         val preliminar = cotizacion.status.equals(ESTADO_PROSPECTO, ignoreCase = true)
@@ -531,7 +548,8 @@ open class QuoteDraftService(private val erp: ErpClient) {
                 "preliminar" to preliminar,
                 "instruccion" to if (preliminar) {
                     "El PDF va como cotizacion preliminar. Dile al cliente que un agente de ventas la revisara y " +
-                        "aprobara, y que le confirmara precios y existencias."
+                        "aprobara, y que le confirmara precios y existencias." +
+                        if (superaTope) " Por el monto, la revisión es prioritaria; no lo presentes como un rechazo." else ""
                 } else null,
             ),
             documentos = listOf(
@@ -557,7 +575,9 @@ open class QuoteDraftService(private val erp: ErpClient) {
         val completo = erp.getCustomer(contexto.tenantId, conversationId, cliente.id) ?: cliente
         val cotizacion = erp.createProspectQuote(
             contexto.tenantId, conversationId, completo,
-            lineas.map { QuoteLineWrite(productId = it.productId, quantity = it.quantity, unitPrice = it.unitPrice, uom = it.unit) },
+            lineas.map {
+                QuoteLineWrite(productId = it.productId, quantity = it.quantity, unitPrice = it.unitPrice, uom = it.unit, dimensions = it.dimensions)
+            },
             channel = contexto.channel.kind,
             conversationRef = conversationRef,
         )
@@ -565,24 +585,33 @@ open class QuoteDraftService(private val erp: ErpClient) {
         return cotizacion
     }
 
-    /** Lineas actuales + el producto (suma si ya estaba). */
-    private fun lineasCon(vigente: ErpQuote, producto: ProductSummary, cantidad: BigDecimal): List<QuoteLineWrite> {
-        val existente = vigente.items.firstOrNull { it.productId == producto.id }
+    /**
+     * Lineas actuales + el producto. Suma solo a una linea del mismo producto
+     * y la MISMA medida: el mismo mueble en otra medida es otra linea.
+     */
+    private fun lineasCon(vigente: ErpQuote, producto: ProductSummary, cantidad: BigDecimal, pedida: Dimensions?): List<QuoteLineWrite> {
+        val medida = pedida ?: producto.dimensions
+        val existente = vigente.items.firstOrNull {
+            it.productId == producto.id && (medida?.igualA(it.dimensions) ?: (it.dimensions == null || !it.customSize))
+        }
         val actuales = vigente.items.map { i ->
             val q = if (i.id == existente?.id) i.quantity + cantidad else i.quantity
             conservar(i.id, i.productName, q, i.unitPrice, i.discount)
         }
         return if (existente != null) actuales
-        else actuales + QuoteLineWrite(productId = producto.id, quantity = cantidad, unitPrice = producto.unitPrice, uom = producto.unit)
+        else actuales + QuoteLineWrite(
+            productId = producto.id, quantity = cantidad, unitPrice = producto.unitPrice, uom = producto.unit, dimensions = pedida,
+        )
     }
 
     private fun conservar(id: Long, nombre: String?, q: BigDecimal, precio: BigDecimal?, descuento: BigDecimal?) =
         QuoteLineWrite(id = id, description = nombre, quantity = q, unitPrice = precio, discount = descuento)
 
-    private fun sumar(pendientes: List<DraftLine>, p: ProductSummary, cantidad: BigDecimal): List<DraftLine> {
-        val ya = pendientes.firstOrNull { it.productId == p.id }
-        return if (ya == null) pendientes + DraftLine(p.id, p.sku, p.name, cantidad, p.unitPrice, p.unit)
-        else pendientes.map { if (it.productId == p.id) it.copy(quantity = it.quantity + cantidad) else it }
+    private fun sumar(pendientes: List<DraftLine>, p: ProductSummary, cantidad: BigDecimal, pedida: Dimensions? = null): List<DraftLine> {
+        fun misma(l: DraftLine) = l.productId == p.id && (if (pedida == null) l.dimensions == null else pedida.igualA(l.dimensions))
+        val ya = pendientes.firstOrNull(::misma)
+        return if (ya == null) pendientes + DraftLine(p.id, p.sku, p.name, cantidad, p.unitPrice, p.unit, pedida)
+        else pendientes.map { if (it === ya) it.copy(quantity = it.quantity + cantidad) else it }
     }
 
     private fun resolverProducto(t: Long, conversationId: Long, productId: Long?, sku: String?): ProductSummary? = when {
@@ -602,15 +631,21 @@ open class QuoteDraftService(private val erp: ErpClient) {
         borrador: QuoteDraft,
         playbook: Playbook,
     ): ErpQuote {
+        // La direccion de entrega va a su propio campo (sale en la tarjeta del
+        // cliente del PDF); el resto de datos, a las notas.
+        val direccion = borrador.datos[CLAVE_DIRECCION]?.takeIf { it.isNotBlank() } ?: cotizacion.deliveryAddress
         val lineasDatos = playbook.cotizacion.datosDelCliente()
+            .filter { it.clave != CLAVE_DIRECCION }
             .mapNotNull { d -> borrador.datos[d.clave]?.let { "${d.etiqueta}: $it" } }
-        if (lineasDatos.isEmpty()) return cotizacion
-        val bloque = (listOf(ENCABEZADO_NOTAS) + lineasDatos).joinToString("\n")
         val previas = cotizacion.notes?.substringBefore(ENCABEZADO_NOTAS)?.trimEnd().orEmpty()
-        val notas = listOf(previas, bloque).filter { it.isNotBlank() }.joinToString("\n\n")
-        if (notas == cotizacion.notes) return cotizacion
+        val notas = if (lineasDatos.isEmpty()) cotizacion.notes
+        else listOf(previas, (listOf(ENCABEZADO_NOTAS) + lineasDatos).joinToString("\n"))
+            .filter { it.isNotBlank() }.joinToString("\n\n")
+        if (notas == cotizacion.notes && direccion == cotizacion.deliveryAddress) return cotizacion
         val lineas = cotizacion.items.map { conservar(it.id, it.productName, it.quantity, it.unitPrice, it.discount) }
-        return erp.updateQuoteLines(contexto.tenantId, conversationId, cotizacion.copy(notes = notas), lineas)
+        return erp.updateQuoteLines(
+            contexto.tenantId, conversationId, cotizacion.copy(notes = notas, deliveryAddress = direccion), lineas,
+        )
     }
 
     private fun ahora() = Instant.now().toEpochMilli()
@@ -653,21 +688,36 @@ open class QuoteDraftService(private val erp: ErpClient) {
      * repite; no calcula: un total inventado por el modelo (impuesto mal
      * aplicado, lineas olvidadas) es peor que no dar total.
      */
-    private fun resumen(q: ErpQuote): Map<String, Any?> = mapOf(
-        "cotizacion" to q.docNumber,
-        "lineas" to q.items.map { i ->
-            mapOf(
-                "producto" to (i.productName ?: "Línea ${i.id}"),
-                "cantidad" to PanelCards.cantidad(i.quantity),
-                "precio_unitario" to i.unitPrice?.let(PanelCards::monto),
-                "total_linea" to i.lineTotal?.let(PanelCards::monto),
-            )
-        },
-        "subtotal" to q.subtotal?.let(PanelCards::monto),
-        "impuesto" to q.tax?.let(PanelCards::monto),
-        "total" to q.total?.let(PanelCards::monto),
-        "importante" to "Estos son los datos reales del ERP. Repite lineas, cantidades y montos tal cual; no recalcules.",
-    )
+    private fun resumen(q: ErpQuote): Map<String, Any?> {
+        // Precio global: el cliente conoce el alcance y el total, no el precio
+        // de cada linea ni las lineas internas (materiales, mano de obra).
+        val global = q.priceDisplay.equals("global", ignoreCase = true)
+        return mapOf(
+            "cotizacion" to q.docNumber,
+            "lineas" to q.items.filter { !global || it.showToClient }.map { i ->
+                mapOf(
+                    "producto" to (i.productName ?: "Línea ${i.id}"),
+                    "medidas" to i.dimensions?.texto(i.dimensionUnit),
+                    "medida_especial" to i.customSize.takeIf { it },
+                    "precio_medida" to when (i.sizePricing) {
+                        "calculated" -> "calculado por medida (estimado; lo confirma el asesor)"
+                        "review" -> "por cotizar: la medida se sale del rango y el asesor pondra el precio"
+                        else -> null
+                    },
+                    "cantidad" to PanelCards.cantidad(i.quantity),
+                    "precio_unitario" to if (global) null else i.unitPrice?.let(PanelCards::monto),
+                    "total_linea" to if (global) null else i.lineTotal?.let(PanelCards::monto),
+                )
+            },
+            "subtotal" to q.subtotal?.let(PanelCards::monto),
+            "impuesto" to q.tax?.let(PanelCards::monto),
+            "total" to q.total?.let(PanelCards::monto),
+            "importante" to if (global) {
+                "Esta cotización es a precio global: da solo el total del proyecto. No menciones precios por línea " +
+                    "ni cómo se calcula (materiales, mano de obra, porcentajes)."
+            } else "Estos son los datos reales del ERP. Repite lineas, cantidades y montos tal cual; no recalcules.",
+        )
+    }
 
     private companion object {
         private val log = LoggerFactory.getLogger(QuoteDraftService::class.java)
@@ -675,5 +725,7 @@ open class QuoteDraftService(private val erp: ErpClient) {
         const val ESTADO_PROSPECTO = "prospecto"
         val ESTADOS_FINALES = setOf("aprobada", "rechazada", "cancelada", "anulada", "vencida", "convertida", "abandonada")
         const val ENCABEZADO_NOTAS = "Datos del cliente (asistente):"
+        /** Dato del playbook que va al campo de direccion de entrega del ERP. */
+        const val CLAVE_DIRECCION = "direccion_entrega"
     }
 }

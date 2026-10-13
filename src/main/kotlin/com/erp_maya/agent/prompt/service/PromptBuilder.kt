@@ -113,12 +113,16 @@ class PromptBuilder {
     private fun negocio(contexto: ExecutionContext, playbook: Playbook): String = buildString {
         val n = playbook.negocio
         if (n != null) {
-            append("El negocio:\n")
+            // Es la fuente de verdad sobre la empresa: si antes en la conversacion
+            // se dijo otra cosa (p. ej. deducida del catalogo), esto la corrige.
+            append("El negocio (fuente de verdad; si antes dijiste otra cosa sobre la empresa, corrigelo con esto):\n")
             n.descripcion?.let { append("- ").append(it).append('\n') }
             n.entregas?.let { append("- Entregas: ").append(it).append('\n') }
             n.pagos?.let { append("- Formas de pago: ").append(it).append('\n') }
             n.horario?.let { append("- Horario: ").append(it).append('\n') }
             n.notas?.let { append("- ").append(it).append('\n') }
+        } else {
+            append("No tienes descripcion del negocio: no supongas a que se dedica la empresa por los productos del catalogo.\n")
         }
         append("Con quien hablas: ")
         append(
@@ -132,8 +136,12 @@ class PromptBuilder {
 
         val l = playbook.limites
         append("Limites:\n")
+        if (l.soloTotal && playbook.audiencia(contexto.channel.kind) != Playbook.AUDIENCIA_VENDEDOR) {
+            append("- Precios: no digas precios de catalogo ni por linea. Agrega lo que pide a la cotizacion y da solo el total que devuelve el sistema, como estimado que confirma un asesor.\n")
+        }
+        append("- Productos con madeToOrder=true se fabrican bajo pedido: no hables de existencias ni de disponibilidad; menciona el tiempo de entrega del negocio.\n")
         if (!l.puedeOfrecerDescuentos) append("- No ofrezcas ni negocies descuentos; si los piden, un agente de ventas lo atendera.\n")
-        l.montoMaximo?.let { append("- Cotizaciones por encima de Q ").append(it.toPlainString()).append(" las revisa un agente de ventas antes de enviarse.\n") }
+        l.montoMaximo?.let { append("- Cotizaciones por encima de Q ").append(it.toPlainString()).append(" se envian igual (PDF preliminar); el agente de ventas las revisa con prioridad.\n") }
         l.lineasMaximas?.let { append("- Maximo ").append(it).append(" productos distintos por cotizacion.\n") }
         if (l.fueraDeAlcance.isNotEmpty()) {
             append("- No resuelves: ").append(l.fueraDeAlcance.joinToString(", "))
@@ -158,6 +166,7 @@ class PromptBuilder {
         }
         append("- Si un asesor ya la tomo, no la tocas: registra cada cambio con cotizacion.solicitar_cambio y dile que el asesor le respondera.\n")
         append("- Descuentos, negociacion y cambios sobre cotizaciones en revision siempre van como solicitud; nunca los prometas.\n")
+        append("- Si un producto tiene medidas (dimensions), confirma si lo quiere en esa medida estandar o en otra y pasa las que pida en cotizacion.agregar. El sistema calcula el precio de la medida especial (precio_medida); si dice 'por cotizar', la linea queda sin precio y el asesor la cotiza: diselo al cliente y no inventes un monto.\n")
         append("- Si pregunta por que se rechazo o ajusto algo: cotizacion.solicitudes y explica con el motivo y la respuesta del asesor, sin agregar razones propias. Si no le basta, cotizacion.consultar.\n")
         append("Decision del cliente sobre la cotizacion ENVIADA por su asesor (pendiente_decision=true en cotizacion.listar):\n")
         append("- Normalmente decide con los botones Aprobar / Comentarios / Rechazar. Si lo dice por texto, confirma numero y total y usa cotizacion.aprobar o cotizacion.rechazar.\n")

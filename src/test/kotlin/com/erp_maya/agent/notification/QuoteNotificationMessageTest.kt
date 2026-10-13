@@ -52,9 +52,25 @@ class QuoteNotificationMessageTest {
             com.erp_maya.agent.playbook.domain.PlantillaEnviada().texto,
             payload.copy(results = emptyList()),
         )
-        assertEquals(
-            "Hola Fernando, tu asesor revisó tu cotización COT-000002 y te la envía oficialmente. Total: Q 1,234.56. Te adjunto el documento.",
-            texto,
-        )
+        assertEquals("Hola Fernando, tu asesor preparó tu cotización *COT-000002*.\nTotal: *Q 1,234.56*", texto)
+    }
+
+    @Test
+    fun `texto y pregunta van en un solo cuerpo si caben`() {
+        val (previo, cuerpo) = QuoteNotificationService.cuerpoDecision("Hola, tu cotización", "¿Cómo deseas continuar?")
+        assertEquals(null, previo)
+        assertEquals("Hola, tu cotización\n\n¿Cómo deseas continuar?", cuerpo)
+
+        val largo = "x".repeat(1100)
+        val (previo2, cuerpo2) = QuoteNotificationService.cuerpoDecision(largo, "¿Cómo deseas continuar?")
+        assertEquals(largo, previo2)
+        assertEquals("¿Cómo deseas continuar?", cuerpo2)
+    }
+
+    @Test
+    fun `pie con la vigencia en fecha larga`() {
+        assertEquals("Válida hasta el 25 de octubre de 2026",
+            QuoteNotificationService.pie("Válida hasta el {vigencia}", "2026-10-25"))
+        assertEquals(null, QuoteNotificationService.pie("Válida hasta el {vigencia}", null))
     }
 }

@@ -29,10 +29,10 @@ open class QuoteDecisionService(
 ) {
 
     /** Los tres botones de la decision sobre esa version. */
-    fun botones(quoteId: Long, version: Int): List<Choice> = listOf(
-        Choice(id(APROBAR, quoteId, version), "✅ Aprobar"),
-        Choice(id(COMENTAR, quoteId, version), "💬 Comentarios"),
-        Choice(id(RECHAZAR, quoteId, version), "❌ Rechazar"),
+    fun botones(quoteId: Long, version: Int, t: PlantillaDecision = PlantillaDecision()): List<Choice> = listOf(
+        Choice(id(APROBAR, quoteId, version), titulo(t.botonAprobar)),
+        Choice(id(COMENTAR, quoteId, version), titulo(t.botonComentar)),
+        Choice(id(RECHAZAR, quoteId, version), titulo(t.botonRechazar)),
     )
 
     open fun ejecutar(contexto: ExecutionContext, conversationId: Long, actual: QuoteDraft?, boton: String): DraftStep {
@@ -56,7 +56,7 @@ open class QuoteDecisionService(
         if (!q.status.equals(ENVIADA, ignoreCase = true)) return texto(actual, estadoActual(q))
         // Boton de una version anterior: no se decide nada, se ofrece la vigente.
         if (q.sentVersion != version) {
-            return DraftStep(actual, llenar(t.versionAnterior, q), opciones = botones(q.id, q.sentVersion))
+            return DraftStep(actual, llenar(t.versionAnterior, q), opciones = botones(q.id, q.sentVersion, t))
         }
 
         return try {
@@ -68,8 +68,8 @@ open class QuoteDecisionService(
                     DraftStep(
                         actual, llenar(t.confirmarAprobar, q),
                         opciones = listOf(
-                            Choice(id(CONFIRMAR_APROBAR, q.id, version), "Sí, apruebo"),
-                            Choice(id(CANCELAR, q.id, version), "No"),
+                            Choice(id(CONFIRMAR_APROBAR, q.id, version), titulo(t.botonSiAprobar)),
+                            Choice(id(CANCELAR, q.id, version), titulo(t.botonNo)),
                         ),
                     )
                 }
@@ -81,8 +81,8 @@ open class QuoteDecisionService(
                 RECHAZAR -> DraftStep(
                     actual, llenar(t.confirmarRechazar, q),
                     opciones = listOf(
-                        Choice(id(CONFIRMAR_RECHAZAR, q.id, version), "Sí, rechazar"),
-                        Choice(id(CANCELAR, q.id, version), "No"),
+                        Choice(id(CONFIRMAR_RECHAZAR, q.id, version), titulo(t.botonSiRechazar)),
+                        Choice(id(CANCELAR, q.id, version), titulo(t.botonNo)),
                     ),
                 )
                 CONFIRMAR_RECHAZAR -> {
@@ -91,7 +91,7 @@ open class QuoteDecisionService(
                     texto(actual, llenar(t.rechazada, q))
                 }
                 COMENTAR -> texto(actual, llenar(t.comentar, q))
-                CANCELAR -> DraftStep(actual, llenar(t.cancelar, q), opciones = botones(q.id, version))
+                CANCELAR -> DraftStep(actual, llenar(t.cancelar, q), opciones = botones(q.id, version, t))
                 else -> texto(actual, "No reconozco esa opción.")
             }
         } catch (e: ErpException) {
@@ -100,7 +100,7 @@ open class QuoteDecisionService(
             log.warn("decision {} sobre la cotizacion {} rechazada por el ERP: {}", accion, q.docNumber, e.message)
             val vigente = runCatching { erp.getQuote(contexto.tenantId, conversationId, q.id) }.getOrNull() ?: q
             if (vigente.status.equals(ENVIADA, ignoreCase = true) && vigente.sentVersion != version) {
-                DraftStep(actual, llenar(t.versionAnterior, vigente), opciones = botones(vigente.id, vigente.sentVersion))
+                DraftStep(actual, llenar(t.versionAnterior, vigente), opciones = botones(vigente.id, vigente.sentVersion, t))
             } else {
                 texto(actual, e.message?.substringAfter("VERSION_ANTERIOR: ") ?: estadoActual(vigente))
             }
@@ -124,7 +124,7 @@ open class QuoteDecisionService(
         }
         if (!confirmado) {
             throw ErpException("El cliente aún no confirmó. Pregúntale: \"${llenar(t.confirmarAprobar, q)}\" " +
-                "y llama de nuevo cuando responda que sí.")
+                "y llama de nuevo cuando responda que sí. No es un error técnico ni lo reintentes en este turno.")
         }
         erp.clientApprove(contexto.tenantId, conversationId, q.id, q.sentVersion)
         log.info("cotizacion {} v{} aprobada por el cliente (texto)", q.docNumber, q.sentVersion)
@@ -143,7 +143,7 @@ open class QuoteDecisionService(
         val q = enviadaDelCliente(contexto, conversationId, actual, quoteId)
         if (!confirmado) {
             throw ErpException("El cliente aún no confirmó. Pregúntale: \"${llenar(t.confirmarRechazar, q)}\" " +
-                "y llama de nuevo cuando responda que sí.")
+                "y llama de nuevo cuando responda que sí. No es un error técnico ni lo reintentes en este turno.")
         }
         erp.clientReject(contexto.tenantId, conversationId, q.id, q.sentVersion, motivo?.takeIf { it.isNotBlank() }, nota?.takeIf { it.isNotBlank() })
         log.info("cotizacion {} v{} rechazada por el cliente (texto, motivo={})", q.docNumber, q.sentVersion, motivo)
@@ -218,6 +218,14 @@ open class QuoteDecisionService(
         fun esBoton(texto: String?): Boolean = texto != null && FORMATO.matches(texto.trim())
 
         fun id(accion: String, quoteId: Long, version: Int) = "$PREFIJO$accion:$quoteId:$version"
+
+        /** WhatsApp corta en 20 caracteres el titulo de un boton: mejor cortarlo aqui. */
+        fun titulo(texto: String) = texto.trim().take(20)
+
+        /** "2026-10-25" -> "25 de octubre de 2026" para el pie del mensaje. */
+        fun vigencia(fecha: String?): String? = fecha
+            ?.let { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() }
+            ?.format(java.time.format.DateTimeFormatter.ofPattern("d 'de' MMMM 'de' yyyy", java.util.Locale.forLanguageTag("es-GT")))
 
         fun llenar(molde: String, q: ErpQuote): String = llenar(
             molde,
