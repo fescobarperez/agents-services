@@ -1,0 +1,12 @@
+# Perfil prod: esquema agents_prod, en la misma base que el ERP (que usa
+# stackline_prod). Se crea vacío a mano antes del primer arranque y Liquibase
+# crea todo adentro:
+#   CREATE SCHEMA IF NOT EXISTS agents_prod;
+#
+# Host, puerto y base llegan por variable desde el .env del compose; la
+# contraseña, por DB_PASSWORD. Aquí no van secretos.
+datasources:
+  default:
+    url: "jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:erp_maya}?currentSchema=agents_prod"
+    username: ${DB_USER:erp_maya}
+    password: ${DB_PASSWORD}
