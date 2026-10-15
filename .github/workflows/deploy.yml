@@ -1,23 +1,13 @@
 # Despliegue a producción — SOLO manual.
 #
-# Espejo del flujo de stack-line-services y stack-line-ui. Existe para poder
-# publicar desde el repositorio que estás tocando: el servidor hace pull de
-# los TRES repos y reconstruye lo que cambió, así que da igual desde cuál se
-# lance. Por defecto reconstruye solo el agente.
-#
-# Si editas este archivo, actualiza también el de los otros repositorios.
+# Despliega únicamente el agente (agents-services): el servidor trae solo este repo y
+# reconstruye solo su contenedor. El backend se publica desde
+# stack-line-services.
 
 name: Deploy
 
 on:
   workflow_dispatch:
-    inputs:
-      target:
-        description: "Qué reconstruir"
-        type: choice
-        required: true
-        default: agents
-        options: [agents, auto, backend, web, all]
 
 # Comparte grupo con los flujos de los otros repositorios: dos despliegues a
 # la vez sobre el mismo servidor se pisan, vengan de donde vengan.
@@ -49,7 +39,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key \
               -o BatchMode=yes \
               "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-              "~/stackline/stack-line-services/deploy/deploy.sh ${{ inputs.target }}"
+              "~/stackline/stack-line-services/deploy/deploy.sh agents"
 
       - name: Limpiar
         if: always()
