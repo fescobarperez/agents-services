@@ -1,0 +1,12 @@
+# Lo que no entra al contexto de la imagen. `.env` sobre todo: los secretos
+# llegan por el compose, nunca dentro de la imagen.
+.env
+.env.*
+build/
+.gradle/
+.kotlin/
+.micronaut/
+.git/
+.idea/
+*.iml
+Claude outputs/
