@@ -426,9 +426,10 @@ open class ErpHttpClient(
     ) = req
         .header(CABECERA_TENANT, tenantId.toString())
         .header(CABECERA_CONVERSACION, conversationId.toString())
-        .header("X-Agent-Service", config.clientId ?: "agents-services")
-        // Con usuario (widget del ERP) se consulta como el; si no, token de servicio.
-        .bearerAuth(ErpUserToken.get() ?: tokens.currentToken())
+        .header("X-Agent-Service", "agents-services")
+        // Con usuario (widget del ERP) se consulta como el; si no, con el token
+        // de servicio de ESA empresa.
+        .bearerAuth(ErpUserToken.get() ?: tokens.currentToken(tenantId))
         .contentType(MediaType.APPLICATION_JSON)
         .accept(acepta)
 
@@ -483,7 +484,7 @@ open class ErpHttpClient(
                     // Un 401 casi siempre es el token vencido antes de tiempo.
                     // Se descarta y se reintenta UNA vez; si vuelve a fallar es
                     // credencial mala y repetir no arregla nada.
-                    tokens.invalidate()
+                    tokens.invalidate(tenantId)
                     log.warn("el ERP devolvio 401; se renueva el token y se reintenta una vez")
                     try {
                         llamada(decorar(req, tenantId, conversationId, acepta))

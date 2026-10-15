@@ -88,11 +88,6 @@ whatsapp:
 erp:
   base-url: ${ERP_BASE_URL:`http://localhost:8080`}
   timeout-ms: ${ERP_TIMEOUT_MS:10000}
-  # Credenciales de maquina (client credentials), nunca un usuario-persona.
-  client-id: ${ERP_CLIENT_ID:}
-  client-secret: ${ERP_CLIENT_SECRET:}
-  # Fase 1 (WhatsApp, sin usuario logueado): usuario bot del ERP con permisos
-  # minimos. Solo se usa si no hay client credentials.
-  bot-company-code: ${ERP_BOT_COMPANY:}
-  bot-email: ${ERP_BOT_EMAIL:}
-  bot-password: ${ERP_BOT_PASSWORD:}
+  # Llave de servicio para pedir al ERP un token por empresa
+  # (POST /api/internal/service-token). Es la misma AGENT_KEY_ERP.
+  service-key: ${AGENT_KEY_ERP:}
