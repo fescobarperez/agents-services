@@ -77,6 +77,19 @@ data class ModelCompletion(
     val pideHerramientas: Boolean get() = toolCalls.isNotEmpty()
 }
 
+/**
+ * Una imagen lista para mandarse al modelo: ya validada y reducida. Vive solo
+ * en memoria durante la llamada; nunca se persiste ni se registra en logs.
+ */
+class ImagenParaModelo(val bytes: ByteArray, val mimeType: String) {
+    override fun toString() = "ImagenParaModelo($mimeType, ${bytes.size} bytes)"
+}
+
+/** Imagen que devolvio el modelo de imagenes (un render). Solo en memoria hasta subirla a Meta. */
+class ImagenGenerada(val bytes: ByteArray, val mimeType: String) {
+    override fun toString() = "ImagenGenerada($mimeType, ${bytes.size} bytes)"
+}
+
 /** Fallo al hablar con el proveedor: red, timeout, credencial o cuota. */
 class ModelCallException(mensaje: String, causa: Throwable? = null) : RuntimeException(mensaje, causa)
 

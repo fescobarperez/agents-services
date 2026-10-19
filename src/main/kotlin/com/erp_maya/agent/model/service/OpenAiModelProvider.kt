@@ -1,16 +1,23 @@
 package com.erp_maya.agent.model.service
 
 import com.erp_maya.agent.context.domain.ModelRef
+import com.erp_maya.agent.model.client.OpenAiContentPart
 import com.erp_maya.agent.model.client.OpenAiFunction
 import com.erp_maya.agent.model.client.OpenAiFunctionCall
+import com.erp_maya.agent.model.client.OpenAiImageResponse
 import com.erp_maya.agent.model.client.OpenAiMessage
+import com.erp_maya.agent.model.client.OpenAiPartsMessage
 import com.erp_maya.agent.model.client.OpenAiProperty
 import com.erp_maya.agent.model.client.OpenAiRequest
 import com.erp_maya.agent.model.client.OpenAiResponse
 import com.erp_maya.agent.model.client.OpenAiSchema
 import com.erp_maya.agent.model.client.OpenAiTool
 import com.erp_maya.agent.model.client.OpenAiToolCall
+import com.erp_maya.agent.model.client.OpenAiVisionRequest
 import com.erp_maya.agent.model.client.ProviderHttpClients
+import com.erp_maya.agent.model.domain.AiProvider
+import com.erp_maya.agent.model.domain.ImagenGenerada
+import com.erp_maya.agent.model.domain.ImagenParaModelo
 import com.erp_maya.agent.model.domain.ModelCallException
 import com.erp_maya.agent.model.domain.ModelCompletion
 import com.erp_maya.agent.model.domain.ModelOptions
@@ -25,6 +32,7 @@ import io.micronaut.serde.ObjectMapper
 import jakarta.inject.Singleton
 import org.slf4j.LoggerFactory
 import java.time.Duration
+import java.util.Base64
 
 /**
  * Implementacion para APIs con el formato de chat de OpenAI
@@ -68,12 +76,31 @@ abstract class OpenAiCompatibleModelProvider(
             tools = if (tools.isEmpty() || !model.supportsTools) null else tools.map(::declarar),
         )
 
+        val respuesta = llamar(proveedor, model, json.writeValueAsString(cuerpo), options)
+
+        val mensaje = respuesta.choices?.firstOrNull()?.message
+            ?: throw ModelCallException("El proveedor '$providerCode' respondio sin mensaje")
+
+        val uso = respuesta.usage
+        return ModelCompletion(
+            text = mensaje.content?.trim(),
+            usage = ModelUsage(
+                input = uso?.promptTokens ?: 0,
+                cached = uso?.promptTokensDetails?.cachedTokens ?: 0,
+                output = uso?.completionTokens ?: 0,
+            ),
+            toolCalls = mensaje.toolCalls.orEmpty().map { interpretar(it) },
+        )
+    }
+
+    /** POST a `/chat/completions` y lectura de la respuesta, igual para texto e imagenes. */
+    private fun llamar(proveedor: AiProvider, model: ModelRef, cuerpoJson: String, options: ModelOptions): OpenAiResponse {
         val url = "${proveedor.baseUrl}/chat/completions"
         val crudo = try {
             clientes.postJson(
                 url = url,
                 bearer = credenciales.secretFor(proveedor),
-                json = json.writeValueAsString(cuerpo),
+                json = cuerpoJson,
                 timeout = Duration.ofMillis(options.timeoutMs.toLong().coerceAtLeast(1_000)),
             )
         } catch (e: Exception) {
@@ -99,9 +126,32 @@ abstract class OpenAiCompatibleModelProvider(
             throw ModelCallException("El proveedor '$providerCode' respondio algo ilegible", e)
         }
 
+        return respuesta
+    }
+
+    override fun completeWithImages(
+        model: ModelRef,
+        instrucciones: String,
+        imagenes: List<ImagenParaModelo>,
+        options: ModelOptions,
+    ): ModelCompletion {
+        val proveedor = proveedores.byCode(providerCode)
+            ?: throw ModelCallException("El proveedor '$providerCode' no esta configurado o esta inactivo")
+        // Un solo mensaje de usuario con el texto y las fotos: es la forma que
+        // aceptan todas las capas compatibles (algunas no admiten imagenes en
+        // un mensaje de sistema).
+        val partes = listOf(OpenAiContentPart.texto(instrucciones)) + imagenes.map {
+            OpenAiContentPart.imagen("data:${it.mimeType};base64," + Base64.getEncoder().encodeToString(it.bytes))
+        }
+        val cuerpo = OpenAiVisionRequest(
+            model = model.modelName,
+            messages = listOf(OpenAiPartsMessage(role = "user", content = partes)),
+            temperature = if (enviaTemperatura) options.temperature.toDouble() else null,
+            maxCompletionTokens = options.maxTokens ?: MAX_TOKENS_POR_DEFECTO,
+        )
+        val respuesta = llamar(proveedor, model, json.writeValueAsString(cuerpo), options)
         val mensaje = respuesta.choices?.firstOrNull()?.message
             ?: throw ModelCallException("El proveedor '$providerCode' respondio sin mensaje")
-
         val uso = respuesta.usage
         return ModelCompletion(
             text = mensaje.content?.trim(),
@@ -110,8 +160,45 @@ abstract class OpenAiCompatibleModelProvider(
                 cached = uso?.promptTokensDetails?.cachedTokens ?: 0,
                 output = uso?.completionTokens ?: 0,
             ),
-            toolCalls = mensaje.toolCalls.orEmpty().map { interpretar(it) },
         )
+    }
+
+    /**
+     * `POST {base_url}/images/edits` con la foto como archivo. Calidad media y
+     * tamaño automatico: suficiente para mostrar la idea en WhatsApp sin
+     * pagar la calidad maxima.
+     */
+    override fun editImage(model: ModelRef, instrucciones: String, foto: ImagenParaModelo, timeoutMs: Int): ImagenGenerada {
+        val proveedor = proveedores.byCode(providerCode)
+            ?: throw ModelCallException("El proveedor '$providerCode' no esta configurado o esta inactivo")
+        val extension = foto.mimeType.substringAfter('/').replace("jpeg", "jpg")
+        val partes = listOf(
+            ProviderHttpClients.Parte("model", model.modelName),
+            ProviderHttpClients.Parte("prompt", instrucciones),
+            ProviderHttpClients.Parte("size", "auto"),
+            ProviderHttpClients.Parte("quality", "medium"),
+            ProviderHttpClients.Parte("n", "1"),
+            ProviderHttpClients.Parte("image", archivo = "foto.$extension", mimeType = foto.mimeType, contenido = foto.bytes),
+        )
+        val crudo = try {
+            clientes.postMultipart(
+                url = "${proveedor.baseUrl}/images/edits",
+                bearer = credenciales.secretFor(proveedor),
+                partes = partes,
+                timeout = Duration.ofMillis(timeoutMs.toLong().coerceAtLeast(10_000)),
+            )
+        } catch (e: Exception) {
+            log.warn("fallo de {} editando imagen con {}: {} {}", providerCode, model.modelName, e.javaClass.simpleName, e.message)
+            throw ModelCallException("El proveedor '$providerCode' no respondio", e)
+        }
+        if (crudo.status !in 200..299) {
+            log.warn("{} respondio {} editando imagen con {}: {}", providerCode, crudo.status, model.modelName, crudo.body.take(500))
+            throw ModelCallException("El proveedor '$providerCode' respondio ${crudo.status}")
+        }
+        val b64 = runCatching { json.readValue(crudo.body, OpenAiImageResponse::class.java) }.getOrNull()
+            ?.data?.firstOrNull()?.b64Json
+            ?: throw ModelCallException("El proveedor '$providerCode' no devolvio la imagen")
+        return ImagenGenerada(Base64.getDecoder().decode(b64), "image/png")
     }
 
     private fun traducir(m: PromptMessage) = OpenAiMessage(

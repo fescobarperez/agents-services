@@ -52,6 +52,18 @@ data class WaMessage(
     @Nullable val type: String? = null,
     @Nullable val text: WaText? = null,
     @Nullable val interactive: WaInteractive? = null,
+    @Nullable val image: WaImage? = null,
+)
+
+/**
+ * Una foto. Meta no manda los bytes: manda el id del archivo, que se baja
+ * aparte con el token (`GET /{media_id}` y luego la URL que devuelve).
+ */
+@Serdeable
+data class WaImage(
+    @Nullable val id: String? = null,
+    @JsonProperty("mime_type") @Nullable val mimeType: String? = null,
+    @Nullable val caption: String? = null,
 )
 
 @Serdeable
@@ -80,4 +92,17 @@ data class MensajeEntrante(
     val de: String,
     val cuenta: String,
     val texto: String?,
+    /**
+     * Foto adjunta, por referencia (nunca los bytes): la cola y el historial
+     * solo guardan el id de Meta. Nulo en los mensajes de texto y en los
+     * eventos que se encolaron antes de que existiera el campo.
+     */
+    @Nullable val imagen: ImagenEntrante? = null,
+)
+
+/** Referencia a una foto en Meta; la descarga ocurre al atender el turno. */
+@Serdeable
+data class ImagenEntrante(
+    val mediaId: String,
+    @Nullable val mimeType: String? = null,
 )

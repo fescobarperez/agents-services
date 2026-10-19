@@ -40,7 +40,28 @@ data class SessionState(
      * necesita con los ids para no adivinar a cual solicitud se refiere.
      */
     @Nullable val avisoReciente: AvisoCambios? = null,
+    /**
+     * Las ultimas fotos del cliente, por referencia (media id de Meta) y con
+     * su lectura en texto: el render se hace sobre una de ellas. Nunca los bytes.
+     */
+    val fotos: List<FotoCliente> = emptyList(),
 )
+
+@Serdeable
+data class FotoCliente(
+    val mediaId: String,
+    @Nullable val mimeType: String? = null,
+    /** wamid del mensaje que la trajo. */
+    @Nullable val messageId: String? = null,
+    /** La lectura en texto (lo que se ve, la zona marcada…). */
+    @Nullable val lectura: String? = null,
+    val recibidaMs: Long = 0,
+) {
+    companion object {
+        /** Cuantas se recuerdan: las mas nuevas. */
+        const val MAXIMO = 6
+    }
+}
 
 @Serdeable
 data class AvisoCambios(
@@ -87,6 +108,8 @@ data class QuoteDraft(
     @Nullable val ultimaCerrada: String? = null,
     /** Id en el ERP de esa cotizacion cerrada: para reabrirla o pedirle cambios sin adivinar. */
     @Nullable val ultimaCerradaId: Long? = null,
+    /** Lo que se esta diseñando con el cliente (fotos, medidas, detalles). Vive con la cotizacion en curso. */
+    @Nullable val diseno: FichaDiseno? = null,
 ) {
     /**
      * Cierra la cotizacion en curso: lo siguiente que pida el cliente va en
@@ -99,6 +122,65 @@ data class QuoteDraft(
         ultimaCerrada = quoteNumber?.let { "$it ($motivo)" } ?: ultimaCerrada,
         ultimaCerradaId = quoteId ?: ultimaCerradaId,
     )
+}
+
+/**
+ * La ficha de diseño: lo que el cliente quiere, armado durante la
+ * conversacion (fotos, medidas, detalles como aguas o cubierta).
+ *
+ * Es la fuente de verdad para cotizar lo que no sale tal cual del catalogo.
+ * Las medidas estimadas de una foto NO se cotizan hasta que el cliente las
+ * confirma; las que el cliente dice con sus palabras ya cuentan como
+ * confirmadas.
+ */
+@Serdeable
+data class FichaDiseno(
+    /** Que es: pergola, deck, mueble de cocina… */
+    @Nullable val tipo: String? = null,
+    @Nullable val descripcion: String? = null,
+    @Nullable val material: String? = null,
+    @Nullable val acabado: String? = null,
+    @Nullable val medidas: com.erp_maya.agent.erp.domain.Dimensions? = null,
+    /** `foto` (estimadas) o `cliente` (las dijo el cliente). */
+    @Nullable val origenMedidas: String? = null,
+    val medidasConfirmadas: Boolean = false,
+    /** Lo demas que se acordo: aguas, cubierta, deck, iluminacion… */
+    val detalles: Map<String, String> = emptyMap(),
+    /** Producto del catalogo (o propuesto) con que se va a cotizar. */
+    @Nullable val productoId: Long? = null,
+    @Nullable val productoNombre: String? = null,
+    /** El producto lo propuso el asistente y espera revision (sin precio). */
+    val productoPendiente: Boolean = false,
+    /** Renders pedidos para esta cotizacion (cuentan contra el limite del playbook). */
+    val renders: Int = 0,
+    /** El ultimo render pedido (render_jobs.id) y la foto sobre la que se hizo. */
+    @Nullable val ultimoRender: Long? = null,
+    @Nullable val fotoRender: String? = null,
+    /** El render que el cliente aprobo (render_jobs.id). */
+    @Nullable val renderAprobado: Long? = null,
+    /** Ya se guardo en la cotizacion del ERP (ficha + imagen). */
+    val disenoAdjunto: Boolean = false,
+) {
+    /** Hay medidas sacadas de una foto que el cliente aun no confirmo. */
+    fun medidasSinConfirmar(): Boolean = medidas != null && !medidasConfirmadas
+
+    /** Texto para el asesor y para el prompt. */
+    fun texto(): String = buildString {
+        tipo?.let { append(it) }
+        descripcion?.let { if (isNotEmpty()) append(": "); append(it) }
+        material?.let { append(". Material: ").append(it) }
+        acabado?.let { append(". Acabado: ").append(it) }
+        medidas?.let {
+            append(". Medidas: ").append(it.texto())
+            append(if (medidasConfirmadas) " (confirmadas)" else " (estimadas, sin confirmar)")
+        }
+        if (detalles.isNotEmpty()) append(". ").append(detalles.entries.joinToString("; ") { "${it.key}: ${it.value}" })
+    }.trim()
+
+    companion object {
+        const val ORIGEN_FOTO = "foto"
+        const val ORIGEN_CLIENTE = "cliente"
+    }
 }
 
 @Serdeable

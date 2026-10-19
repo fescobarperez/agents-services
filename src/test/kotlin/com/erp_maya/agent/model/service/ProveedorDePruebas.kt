@@ -1,6 +1,7 @@
 package com.erp_maya.agent.model.service
 
 import com.erp_maya.agent.context.domain.ModelRef
+import com.erp_maya.agent.model.domain.ImagenParaModelo
 import com.erp_maya.agent.model.domain.ModelCompletion
 import com.erp_maya.agent.model.domain.ModelOptions
 import com.erp_maya.agent.model.domain.ModelPrompt
@@ -47,6 +48,26 @@ class ProveedorDePruebas : ModelProvider {
         )
     }
 
+    /** Lecturas de fotos que pidio el turno: cuantas imagenes traia cada llamada. */
+    val lecturasPedidas = mutableListOf<Int>()
+
+    /** Lo que responde la lectura de fotos; por defecto, una pergola. */
+    @Volatile
+    var respuestaImagenes: String =
+        """{"fotos":[{"relevante":true,"producto":"Pergola","descripcion":"Pergola de madera junto a la casa",""" +
+            """"material":"madera","medidas_estimadas":{"alto":2.5,"ancho":3,"profundidad":4,"unidad":"m"},""" +
+            """"referencia_escala":"una puerta","confianza":"media"}]}"""
+
+    override fun completeWithImages(
+        model: ModelRef,
+        instrucciones: String,
+        imagenes: List<ImagenParaModelo>,
+        options: ModelOptions,
+    ): ModelCompletion {
+        lecturasPedidas += imagenes.size
+        return ModelCompletion(text = respuestaImagenes, usage = ModelUsage(input = 900, cached = 0, output = 60))
+    }
+
     /** Respuestas programadas, que se consumen en orden. */
     val guion: java.util.Queue<ModelCompletion> = java.util.concurrent.ConcurrentLinkedQueue()
 
@@ -59,5 +80,6 @@ class ProveedorDePruebas : ModelProvider {
         guion.clear()
         recibidos.clear()
         esquemasVistos.clear()
+        lecturasPedidas.clear()
     }
 }

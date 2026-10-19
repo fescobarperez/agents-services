@@ -31,6 +31,21 @@ open class ConversationRepository(private val jdbc: JdbcOperations) {
             leer(rs)
         }
 
+    /**
+     * Cambia la marca de una foto por su lectura en texto, en el entrante que
+     * la trajo. Conserva lo que el cliente escribio al pie.
+     */
+    @Transactional
+    open fun replaceInboundMarker(conversationId: Long, externalId: String, marca: String, reemplazo: String): Int =
+        jdbc.prepareStatement(SQL_REPLACE_MARKER) { stmt ->
+            stmt.setString(1, marca)
+            stmt.setString(2, reemplazo)
+            stmt.setLong(3, conversationId)
+            stmt.setString(4, externalId)
+            stmt.setString(5, reemplazo)
+            stmt.executeUpdate()
+        }
+
     @Transactional
     open fun appendMessage(
         conversationId: Long,
@@ -281,6 +296,13 @@ open class ConversationRepository(private val jdbc: JdbcOperations) {
                      WHERE m.conversation_id = c.id AND m.direction = 'in') AS ultimo_entrante
             FROM conversations c JOIN channels ch ON ch.id = c.channel_id
             WHERE c.id = ?
+        """
+
+        const val SQL_REPLACE_MARKER = """
+            UPDATE messages SET body = replace(body, ?, ?)
+            WHERE conversation_id = ? AND external_id = ? AND direction = 'in'
+              -- Un turno reintentado no vuelve a pegar la lectura sobre si misma.
+              AND strpos(body, ?) = 0
         """
 
         const val SQL_MESSAGE = """

@@ -30,6 +30,24 @@ class ProviderHttpClients {
     /** Respuesta cruda; interpretar el cuerpo es cosa de cada proveedor. */
     data class Respuesta(val status: Int, val body: String)
 
+    /** Un campo de un formulario multipart: texto, o archivo si trae [contenido]. */
+    class Parte(val nombre: String, val valor: String? = null, val archivo: String? = null,
+                val mimeType: String? = null, val contenido: ByteArray? = null)
+
+    /** POST multipart/form-data (p. ej. `/images/edits`, que recibe la foto como archivo). */
+    fun postMultipart(url: String, bearer: String, partes: List<Parte>, timeout: Duration): Respuesta {
+        val limite = "----stackline-${System.nanoTime()}"
+        val peticion = HttpRequest.newBuilder(URI(url))
+            .timeout(timeout)
+            .header("Authorization", "Bearer $bearer")
+            .header("Content-Type", "multipart/form-data; boundary=$limite")
+            .header("Accept", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofByteArray(multipart(limite, partes)))
+            .build()
+        val r = cliente.send(peticion, HttpResponse.BodyHandlers.ofString())
+        return Respuesta(r.statusCode(), r.body() ?: "")
+    }
+
     fun postJson(url: String, bearer: String, json: String, timeout: Duration): Respuesta {
         val peticion = HttpRequest.newBuilder(URI(url))
             .timeout(timeout)
@@ -40,5 +58,26 @@ class ProviderHttpClients {
             .build()
         val r = cliente.send(peticion, HttpResponse.BodyHandlers.ofString())
         return Respuesta(r.statusCode(), r.body() ?: "")
+    }
+
+    companion object {
+        internal fun multipart(limite: String, partes: List<Parte>): ByteArray {
+            val salida = java.io.ByteArrayOutputStream()
+            partes.forEach { p ->
+                salida.write("--$limite\r\n".toByteArray())
+                if (p.contenido != null) {
+                    salida.write(
+                        ("Content-Disposition: form-data; name=\"${p.nombre}\"; filename=\"${p.archivo ?: p.nombre}\"\r\n" +
+                            "Content-Type: ${p.mimeType ?: "application/octet-stream"}\r\n\r\n").toByteArray(),
+                    )
+                    salida.write(p.contenido)
+                    salida.write("\r\n".toByteArray())
+                } else {
+                    salida.write("Content-Disposition: form-data; name=\"${p.nombre}\"\r\n\r\n${p.valor.orEmpty()}\r\n".toByteArray())
+                }
+            }
+            salida.write("--$limite--\r\n".toByteArray())
+            return salida.toByteArray()
+        }
     }
 }

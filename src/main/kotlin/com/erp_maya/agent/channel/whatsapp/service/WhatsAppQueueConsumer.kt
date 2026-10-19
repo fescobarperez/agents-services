@@ -1,6 +1,7 @@
 package com.erp_maya.agent.channel.whatsapp.service
 
 import com.erp_maya.agent.api.dto.ConversationRef
+import com.erp_maya.agent.api.dto.InputImage
 import com.erp_maya.agent.api.dto.TurnInput
 import com.erp_maya.agent.quote.PanelActionService
 import com.erp_maya.agent.quote.QuoteDecisionService
@@ -91,10 +92,15 @@ open class WhatsAppQueueConsumer(
         }
 
         val texto = mensajes.mapNotNull { it.texto?.takeIf(String::isNotBlank) }.joinToString("\n")
-        if (texto.isBlank()) {
-            // Imagen, audio o documento: la entrada de media todavia no existe.
-            // Se descarta con registro en vez de abrir un turno vacio.
-            log.warn("rafaga de {} sin texto (media aun no soportada); se descarta", mensajes.first().de)
+        // Las fotos viajan por referencia; el turno decide si las lee (playbook,
+        // modelo con vision) y cuantas.
+        val imagenes = mensajes.mapNotNull { m ->
+            m.imagen?.let { InputImage(InputImage.SOURCE_WHATSAPP, it.mediaId, it.mimeType, m.wamid) }
+        }
+        if (texto.isBlank() && imagenes.isEmpty()) {
+            // Audio, documento, sticker: esa entrada todavia no existe. Se
+            // descarta con registro en vez de abrir un turno vacio.
+            log.warn("rafaga de {} sin texto ni fotos (media aun no soportada); se descarta", mensajes.first().de)
             grupo.forEach { cola.markDiscarded(it.id, "sin texto: tipo de mensaje aun no soportado") }
             return
         }
@@ -104,7 +110,7 @@ open class WhatsAppQueueConsumer(
         val peticion = TurnRequest(
             channel = CANAL,
             conversationRef = ConversationRef(externalId = primero.de, account = primero.cuenta),
-            input = entrada(mensajes.mapNotNull { it.texto }, texto),
+            input = conImagenes(entrada(mensajes.mapNotNull { it.texto }, texto), imagenes),
             idempotencyKey = llave(wamids),
         )
 
@@ -164,6 +170,14 @@ open class WhatsAppQueueConsumer(
                 payload = mapOf("boton" to boton),
             )
         }
+
+        /**
+         * Un boton gana sobre todo lo demas de la rafaga (se resuelve sin el
+         * modelo), fotos incluidas. Si no hubo texto, el turno lleva solo fotos.
+         */
+        internal fun conImagenes(entrada: TurnInput, imagenes: List<InputImage>): TurnInput =
+            if (entrada.esAccion || imagenes.isEmpty()) entrada
+            else entrada.copy(text = entrada.text?.takeIf { it.isNotBlank() }, images = imagenes)
 
         private fun sha256(texto: String): String =
             MessageDigest.getInstance("SHA-256").digest(texto.toByteArray())

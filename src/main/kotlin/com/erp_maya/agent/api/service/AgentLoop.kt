@@ -7,13 +7,17 @@ import com.erp_maya.agent.prompt.domain.QuoteDraft
 import com.erp_maya.agent.erp.domain.Dimensions
 import com.erp_maya.agent.quote.DraftStep
 import com.erp_maya.agent.quote.QuoteDecisionService
+import com.erp_maya.agent.quote.AdjuntoDiseno
+import com.erp_maya.agent.quote.DisenoService
 import com.erp_maya.agent.quote.QuoteDraftService
+import com.erp_maya.agent.quote.RenderService
 import com.erp_maya.agent.model.domain.ModelPrompt
 import com.erp_maya.agent.model.domain.ModelUsage
 import com.erp_maya.agent.model.domain.PromptMessage
 import com.erp_maya.agent.model.domain.Role
 import com.erp_maya.agent.model.service.ModelRouter
 import com.erp_maya.agent.playbook.domain.Playbook
+import com.erp_maya.agent.prompt.domain.FotoCliente
 import com.erp_maya.agent.prompt.domain.SessionState
 import com.erp_maya.agent.tools.domain.PendingWrite
 import com.erp_maya.agent.tools.domain.ToolCall
@@ -64,6 +68,9 @@ open class AgentLoop(
     private val json: ObjectMapper,
     private val cotizaciones: QuoteDraftService,
     private val decisiones: QuoteDecisionService,
+    private val disenos: DisenoService,
+    private val renders: RenderService,
+    private val adjuntos: AdjuntoDiseno,
 ) {
 
     open fun run(
@@ -160,9 +167,10 @@ open class AgentLoop(
                 } else if (call.name.startsWith(PREFIJO_BORRADOR)) {
                     // El borrador vive en el estado del hilo: estas herramientas
                     // lo leen y lo reescriben, por eso no pasan por ToolExecutor.
-                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador, telefono, playbook, confirmado)
+                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador, telefono, playbook, confirmado, estado.fotos)
                     paso.second?.let { p ->
-                        borrador = p.borrador
+                        // Si el cliente ya aprobo un diseño y ahora hay cotizacion, se guarda ahi.
+                        borrador = adjuntos.adjuntarSiCorresponde(contexto, conversationId, p.borrador)
                         p.tarjetas.forEach { tarjetas[it.card] = it }
                         p.documentos.forEach { documentos[it.url] = it }
                     }
@@ -248,6 +256,7 @@ open class AgentLoop(
         telefono: String?,
         playbook: Playbook,
         confirmado: Boolean,
+        fotos: List<FotoCliente> = emptyList(),
     ): Pair<ToolResult, DraftStep?> {
         // Concedida al agente y disponible en este canal (enviar es solo WhatsApp).
         if (catalogo.availableFor(contexto).none { it.name == call.name }) {
@@ -266,6 +275,29 @@ open class AgentLoop(
                     nit = call.stringArg("nit"),
                     telefono = telefono,
                 )
+                "cotizacion.diseno" -> disenos.actualizar(
+                    actual,
+                    tipo = call.stringArg("tipo"),
+                    descripcion = call.stringArg("descripcion"),
+                    material = call.stringArg("material"),
+                    acabado = call.stringArg("acabado"),
+                    medidas = Dimensions.de(call.decimalArg("alto"), call.decimalArg("ancho"), call.decimalArg("profundidad")),
+                    origenMedidas = call.stringArg("origen_medidas"),
+                    detalles = call.stringArg("detalles"),
+                )
+                // Como en enviar: la confirmacion sale del mensaje del cliente.
+                "cotizacion.confirmar_medidas" -> disenos.confirmarMedidas(actual, confirmado)
+                "cotizacion.producto_nuevo" -> disenos.productoNuevo(
+                    contexto, conversationId, actual, playbook,
+                    nombre = call.stringArg("nombre") ?: throw IllegalArgumentException("Falta nombre"),
+                    categoria = call.stringArg("categoria") ?: throw IllegalArgumentException("Falta categoria"),
+                )
+                ToolCatalog.APROBAR_DISENO -> adjuntos.aprobar(contexto, conversationId, actual, confirmado)
+                ToolCatalog.RENDER -> renders.solicitar(
+                    contexto, conversationId, actual, playbook, fotos, telefono,
+                    fotoNumero = call.longArg("foto")?.toInt(),
+                    ajuste = call.stringArg("ajuste"),
+                )
                 "cotizacion.agregar" -> cotizaciones.agregar(
                     contexto, conversationId, ref, actual,
                     productId = call.longArg("productId") ?: throw IllegalArgumentException("Falta productId"),
@@ -275,7 +307,8 @@ open class AgentLoop(
                     cantidad = call.decimalArg("quantity")
                         ?: throw IllegalArgumentException("Falta quantity: indica la cantidad exacta que pidio el cliente"),
                     playbook = playbook,
-                    medidas = Dimensions.de(call.decimalArg("alto"), call.decimalArg("ancho"), call.decimalArg("profundidad")),
+                    medidas = Dimensions.de(call.decimalArg("alto"), call.decimalArg("ancho"), call.decimalArg("profundidad"))
+                        .also { DisenoService.validarAgregar(actual, it) },
                 )
                 // `confirmado` sale del mensaje del cliente en este turno, no
                 // de lo que diga el modelo.
@@ -440,6 +473,7 @@ open class AgentLoop(
             "cotizacion.agregar", "cotizacion.cantidad", "cotizacion.cliente", "cotizacion.cliente_nuevo",
             "cotizacion.dato", "cotizacion.nueva", "cotizacion.enviar", "cotizacion.reabrir",
             "cotizacion.solicitar_cambio", "cotizacion.consultar", "cotizaciones.issue",
+            "cotizacion.diseno", "cotizacion.confirmar_medidas", "cotizacion.producto_nuevo", "cotizacion.render", "cotizacion.aprobar_diseno",
             "cotizacion.aprobar", "cotizacion.rechazar", "cotizacion.motivo_rechazo",
         )
 

@@ -16,3 +16,7 @@ whatsapp:
 agent:
   summary:
     job-enabled: false
+# El consumidor de renders tampoco corre solo en los tests.
+renders:
+  consumer:
+    enabled: false

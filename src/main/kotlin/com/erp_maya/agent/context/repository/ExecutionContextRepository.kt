@@ -95,6 +95,7 @@ open class ExecutionContextRepository(
             contextWindow = rs.getInt("context_window"),
             supportsTools = rs.getBoolean("supports_tools"),
             supportsCache = rs.getBoolean("supports_cache"),
+            supportsVision = rs.getBoolean("supports_vision"),
         ),
         fallbackModel = rs.getObject("fallback_model_id")?.let {
             ModelRef(
@@ -104,6 +105,19 @@ open class ExecutionContextRepository(
                 contextWindow = rs.getInt("fallback_context_window"),
                 supportsTools = rs.getBoolean("fallback_supports_tools"),
                 supportsCache = rs.getBoolean("fallback_supports_cache"),
+                supportsVision = rs.getBoolean("fallback_supports_vision"),
+            )
+        },
+        // Por el codigo del proveedor y no por el id: un proveedor inactivo deja
+        // el modelo sin proveedor, y eso es "sin renders", no un error.
+        imageModel = rs.getString("image_provider_code")?.let { proveedor ->
+            ModelRef(
+                id = rs.getLong("image_model_id"),
+                providerCode = proveedor,
+                modelName = rs.getString("image_model_name"),
+                contextWindow = rs.getInt("image_context_window"),
+                supportsTools = false,
+                supportsCache = false,
             )
         },
         prompt = PromptRef(
@@ -149,13 +163,18 @@ open class ExecutionContextRepository(
                    a.temperature, a.max_tool_loops, a.response_timeout_ms,
                    m.id            AS model_id,
                    p.code          AS provider_code,
-                   m.model_name, m.context_window, m.supports_tools, m.supports_cache,
+                   m.model_name, m.context_window, m.supports_tools, m.supports_cache, m.supports_vision,
                    fm.id           AS fallback_model_id,
                    fp.code         AS fallback_provider_code,
                    fm.model_name   AS fallback_model_name,
                    fm.context_window AS fallback_context_window,
                    fm.supports_tools AS fallback_supports_tools,
                    fm.supports_cache AS fallback_supports_cache,
+                   fm.supports_vision AS fallback_supports_vision,
+                   im.id           AS image_model_id,
+                   ip.code         AS image_provider_code,
+                   im.model_name   AS image_model_name,
+                   im.context_window AS image_context_window,
                    pv.id           AS prompt_version_id,
                    pv.version      AS prompt_version,
                    pv.body         AS prompt_body,
@@ -172,6 +191,8 @@ open class ExecutionContextRepository(
             JOIN ai_providers p       ON p.id = m.provider_id AND p.is_active
             LEFT JOIN ai_models fm    ON fm.id = a.fallback_model_id
             LEFT JOIN ai_providers fp ON fp.id = fm.provider_id
+            LEFT JOIN ai_models im    ON im.id = a.image_model_id AND im.is_active
+            LEFT JOIN ai_providers ip ON ip.id = im.provider_id AND ip.is_active
             JOIN ai_prompt_versions pv ON pv.id = a.prompt_version_id
             LEFT JOIN agent_tenant_policies pol ON pol.tenant_id = ca.tenant_id
             WHERE c.account_ref = ? AND c.is_active

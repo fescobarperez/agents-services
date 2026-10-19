@@ -1,6 +1,7 @@
 package com.erp_maya.agent.channel.whatsapp.service
 
 import com.erp_maya.agent.channel.whatsapp.domain.MensajeEntrante
+import com.erp_maya.agent.vision.service.LectorImagenes
 import com.erp_maya.agent.channel.whatsapp.domain.WhatsAppWebhook
 import com.erp_maya.agent.channel.whatsapp.repository.InboundEventRepository
 import com.erp_maya.agent.context.domain.AgentUnavailableException
@@ -43,7 +44,7 @@ open class WhatsAppInboundService(
             // Primero el historial, despues la cola. Los dos son idempotentes
             // por wamid: un reintento de Meta no duplica ni uno ni otro.
             val conversacion = conversaciones.abrirConversacion(contexto, mensaje.de)
-            conversaciones.registrarEntrante(conversacion.id, null, mensaje.wamid, mensaje.texto)
+            conversaciones.registrarEntrante(conversacion.id, null, mensaje.wamid, cuerpoHistorial(mensaje))
 
             val guardado = cola.enqueue(
                 channelId = contexto.channel.id,
@@ -58,6 +59,15 @@ open class WhatsAppInboundService(
         }
         return encolados
     }
+
+    /**
+     * Una foto entra al historial como marca y, si trae pie, con el pie. Al
+     * atender el turno la marca se reemplaza por la lectura en texto de la
+     * foto: el historial nunca guarda la imagen.
+     */
+    private fun cuerpoHistorial(mensaje: MensajeEntrante): String? =
+        if (mensaje.imagen == null) mensaje.texto
+        else listOfNotNull(LectorImagenes.MARCA_FOTO, mensaje.texto?.takeIf { it.isNotBlank() }).joinToString(" ")
 
     /**
      * El contexto se resuelve aqui para no encolar mensajes de una cuenta que

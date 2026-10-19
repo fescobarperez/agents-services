@@ -84,6 +84,60 @@ class ToolCatalog {
             ),
         ),
         ToolDefinition(
+            name = "cotizacion.diseno",
+            mode = ToolMode.READ,
+            description = "Anota o corrige la ficha de diseño de lo que el cliente quiere (sobre todo cuando manda fotos " +
+                "o pide algo a la medida): tipo, descripcion, material, acabado, medidas y detalles como aguas o " +
+                "cubierta. Lo que no mandes se conserva. Si las medidas salen de una foto usa origen_medidas=foto " +
+                "(quedan sin confirmar); si el cliente las dijo, origen_medidas=cliente.",
+            parameters = listOf(
+                ToolParameter("tipo", "string", false, "Que es: pergola, deck, mueble…"),
+                ToolParameter("descripcion", "string", false, "Una o dos frases con lo que quiere"),
+                ToolParameter("material", "string", false, "Material"),
+                ToolParameter("acabado", "string", false, "Acabado o color"),
+                ToolParameter("alto", "number", false, "Alto en metros"),
+                ToolParameter("ancho", "number", false, "Ancho en metros"),
+                ToolParameter("profundidad", "number", false, "Profundidad en metros"),
+                ToolParameter("origen_medidas", "string", false, "foto (estimadas) o cliente (las dijo el cliente)"),
+                ToolParameter("detalles", "string", false, "Otros datos como 'aguas=1; cubierta=teja'. Un valor vacio borra el dato"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.confirmar_medidas",
+            mode = ToolMode.READ,
+            description = "Marca como confirmadas las medidas de la ficha de diseño. Solo funciona si el cliente dijo " +
+                "que si en su ultimo mensaje, despues de que le mostraste las medidas.",
+        ),
+        ToolDefinition(
+            name = "cotizacion.producto_nuevo",
+            mode = ToolMode.READ,
+            description = "Registra un producto que el cliente pide y NO esta en el catalogo (buscalo antes con " +
+                "productos.search). Queda sin precio y pendiente de que un asesor lo revise; despues agregalo con " +
+                "cotizacion.agregar y la linea queda por cotizar. Solo si pertenece a las lineas que vende la empresa.",
+            parameters = listOf(
+                ToolParameter("nombre", "string", true, "Nombre corto del producto, p. ej. 'Pergola de madera a 1 agua'"),
+                ToolParameter("categoria", "string", true, "Linea de producto (categoria) a la que pertenece"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.render",
+            mode = ToolMode.READ,
+            description = "Genera una imagen de ejemplo de como quedaria lo que se cotiza, editando la foto del lugar " +
+                "que mando el cliente. Usala cuando el cliente pida ver como quedaria, con la ficha de diseño completa " +
+                "(tipo y medidas). Hay un limite de imagenes por cotizacion: junta todo antes de la primera. La imagen " +
+                "llega aparte en unos segundos.",
+            parameters = listOf(
+                ToolParameter("foto", "integer", false, "Numero de la foto del lugar (1 = la primera que mando); si no, la del render anterior o la mas reciente"),
+                ToolParameter("ajuste", "string", false, "El cambio que pidio el cliente respecto a la imagen anterior, si lo hay"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.aprobar_diseno",
+            mode = ToolMode.READ,
+            description = "El cliente dice que le gusta la ultima imagen de ejemplo: la anota como su diseño y la guarda " +
+                "en la cotizacion para el asesor. Solo funciona si el cliente dijo que si en su ultimo mensaje.",
+        ),
+        ToolDefinition(
             name = "cotizacion.dato",
             mode = ToolMode.READ,
             description = "Guarda un dato que la cotizacion necesita (los pide el checklist de la cotizacion en " +
@@ -257,7 +311,9 @@ class ToolCatalog {
         const val ENVIAR = "cotizacion.enviar"
 
         /** Herramientas que solo tienen sentido con un cliente al otro lado del chat. */
-        val SOLO_WHATSAPP = setOf(STICKER, ENVIAR)
+        const val RENDER = "cotizacion.render"
+        const val APROBAR_DISENO = "cotizacion.aprobar_diseno"
+        val SOLO_WHATSAPP = setOf(STICKER, ENVIAR, RENDER, APROBAR_DISENO)
         val MOMENTOS_STICKER = listOf("saludo", "listo", "buscando")
 
         fun conStickers(contexto: ExecutionContext): Boolean =

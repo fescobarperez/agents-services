@@ -1,0 +1,30 @@
+# Ficha de diseño y productos que propone el asistente.
+#
+# Las tres herramientas viven en el borrador de cotizacion (prefijo
+# `cotizacion.`): no escriben en el ERP salvo producto_nuevo, que crea el
+# producto SIN precio y pendiente de revision. Si se crean o no lo decide el
+# playbook (`cotizacion.productos_nuevos`), no la concesion.
+databaseChangeLog:
+
+  - changeSet:
+      id: 080-tools-diseno
+      author: stackline
+      comment: Ficha de diseño, confirmacion de medidas y producto nuevo pendiente de revision.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve)
+              SELECT a.id, t.patron, 'read', true
+              FROM ai_agents a,
+                   (VALUES ('cotizacion.diseno'), ('cotizacion.confirmar_medidas'),
+                           ('cotizacion.producto_nuevo')) AS t(patron)
+              WHERE a.code = 'ventas'
+                AND NOT EXISTS (
+                    SELECT 1 FROM ai_agent_tools x WHERE x.agent_id = a.id AND x.tool_pattern = t.patron
+                );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM ai_agent_tools
+               WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas')
+                 AND tool_pattern IN ('cotizacion.diseno', 'cotizacion.confirmar_medidas', 'cotizacion.producto_nuevo');

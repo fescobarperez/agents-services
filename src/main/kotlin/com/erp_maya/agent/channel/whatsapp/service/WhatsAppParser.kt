@@ -1,5 +1,6 @@
 package com.erp_maya.agent.channel.whatsapp.service
 
+import com.erp_maya.agent.channel.whatsapp.domain.ImagenEntrante
 import com.erp_maya.agent.channel.whatsapp.domain.MensajeEntrante
 import com.erp_maya.agent.channel.whatsapp.domain.WaMessage
 import com.erp_maya.agent.channel.whatsapp.domain.WhatsAppWebhook
@@ -23,7 +24,8 @@ class WhatsAppParser {
     private fun normalizar(m: WaMessage, cuenta: String): MensajeEntrante? {
         val id = m.id ?: return null
         val de = m.from ?: return null
-        return MensajeEntrante(wamid = id, de = de, cuenta = "wa:$cuenta", texto = textoDe(m))
+        val imagen = m.image?.takeIf { m.type == "image" }?.let { img -> img.id?.let { ImagenEntrante(it, img.mimeType) } }
+        return MensajeEntrante(wamid = id, de = de, cuenta = "wa:$cuenta", texto = textoDe(m), imagen = imagen)
     }
 
     /**
@@ -38,6 +40,8 @@ class WhatsAppParser {
         "interactive" -> m.interactive?.buttonReply?.id
             ?: m.interactive?.listReply?.id
             ?: m.interactive?.buttonReply?.title
+        // De una foto, el texto es lo que el cliente escribio al pie (si escribio).
+        "image" -> m.image?.caption?.takeIf { it.isNotBlank() }
         else -> null
     }
 }

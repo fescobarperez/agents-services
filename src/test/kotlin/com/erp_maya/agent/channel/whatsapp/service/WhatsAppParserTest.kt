@@ -38,6 +38,35 @@ class WhatsAppParserTest {
     }
 
     @Test
+    fun `una foto trae su media id y el pie como texto`() {
+        val mensajes = parsear(
+            """
+            {"entry":[{"changes":[{"value":{
+              "metadata":{"phone_number_id":"15550001111"},
+              "messages":[{"id":"wamid.FOTO","from":"50255551234","type":"image",
+                           "image":{"id":"987654","mime_type":"image/jpeg","caption":"asi la quiero"}}]}}]}]}
+            """.trimIndent(),
+        )
+        assertEquals(1, mensajes.size)
+        assertEquals("987654", mensajes[0].imagen?.mediaId)
+        assertEquals("image/jpeg", mensajes[0].imagen?.mimeType)
+        assertEquals("asi la quiero", mensajes[0].texto)
+    }
+
+    @Test
+    fun `una foto sin pie no trae texto pero si la referencia`() {
+        val mensajes = parsear(
+            """
+            {"entry":[{"changes":[{"value":{
+              "metadata":{"phone_number_id":"15550001111"},
+              "messages":[{"id":"wamid.FOTO2","from":"50255551234","type":"image","image":{"id":"111"}}]}}]}]}
+            """.trimIndent(),
+        )
+        assertEquals("111", mensajes[0].imagen?.mediaId)
+        assertEquals(null, mensajes[0].texto)
+    }
+
+    @Test
     fun `de un boton toma el id, no la etiqueta`() {
         // Es lo que permite reconocer una confirmacion sin interpretar texto:
         // el boton se ve "Confirmar" pero viaja como `confirm`.

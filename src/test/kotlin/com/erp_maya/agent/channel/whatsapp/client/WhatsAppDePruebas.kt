@@ -29,6 +29,7 @@ class WhatsAppDePruebas : WhatsAppCloudClient("http://localhost", "token-de-prue
     fun limpiar() {
         envios.clear()
         subidas.clear()
+        descargas.clear()
         fallar = false
     }
 
@@ -40,9 +41,28 @@ class WhatsAppDePruebas : WhatsAppCloudClient("http://localhost", "token-de-prue
 
     val subidas = CopyOnWriteArrayList<String>()
 
+    /** Media ids que se pidieron bajar. */
+    val descargas = CopyOnWriteArrayList<String>()
+
+    override fun descargarMedia(mediaId: String, maxBytes: Long): MediaDescargada {
+        if (fallar) throw WhatsAppSendException("fallo simulado de la Graph API")
+        descargas += mediaId
+        return MediaDescargada(PNG_DE_PRUEBA, "image/png")
+    }
+
     override fun subirMedia(phoneNumberId: String, contenido: ByteArray, mimeType: String, nombre: String): String {
         if (fallar) throw WhatsAppSendException("fallo simulado de la Graph API")
         subidas += nombre
         return "media-${secuencia.incrementAndGet()}"
+    }
+
+    companion object {
+        /** Una foto real de 40×30 (PNG), para que la preparacion la pueda abrir. */
+        val PNG_DE_PRUEBA: ByteArray by lazy {
+            val img = java.awt.image.BufferedImage(40, 30, java.awt.image.BufferedImage.TYPE_INT_RGB)
+            val salida = java.io.ByteArrayOutputStream()
+            javax.imageio.ImageIO.write(img, "png", salida)
+            salida.toByteArray()
+        }
     }
 }

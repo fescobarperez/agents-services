@@ -132,11 +132,36 @@ class WhatsAppQueueConsumerTest {
         assertEquals(0, meta.envios.size)
     }
 
+    @Test
+    fun `una foto sola abre turno y en el historial queda texto, no la imagen`() {
+        val remitente = unico()
+        val wamid = "wamid.${unico()}"
+        entrada.encolar(webhook(remitente, wamid to "${FOTO}asi la quiero"))
+
+        // Al llegar: la marca y el pie.
+        assertEquals("[Foto del cliente] asi la quiero", texto("SELECT body FROM messages WHERE external_id = '$wamid'"))
+
+        assertEquals(1, consumidor.procesar())
+
+        assertEquals("done", texto("SELECT status FROM inbound_events WHERE external_id = '$wamid'"))
+        assertEquals(1, meta.envios.size)
+        // Con el playbook por defecto (fotos apagadas) no se baja nada y el
+        // historial dice por que no se leyo; el pie se conserva.
+        assertEquals(0, meta.descargas.size)
+        val cuerpo = texto("SELECT body FROM messages WHERE external_id = '$wamid'").orEmpty()
+        assertTrue(cuerpo.startsWith("[Foto del cliente] (no se leyo"), cuerpo)
+        assertTrue(cuerpo.endsWith("asi la quiero"), cuerpo)
+    }
+
     /** Cuerpo del webhook de Meta con uno o varios mensajes del mismo remitente. */
     private fun webhook(remitente: String, vararg mensajes: Pair<String, String?>): ByteArray {
         val lista = mensajes.joinToString(",") { (wamid, cuerpo) ->
             if (cuerpo == null) {
-                """{"id":"$wamid","from":"$remitente","timestamp":"1","type":"image","image":{"id":"m1"}}"""
+                // Un tipo que aun no se atiende (audio): las fotos ya abren turno.
+                """{"id":"$wamid","from":"$remitente","timestamp":"1","type":"audio","audio":{"id":"m1"}}"""
+            } else if (cuerpo.startsWith(FOTO)) {
+                val pie = cuerpo.removePrefix(FOTO).takeIf { it.isNotBlank() }?.let { ""","caption":"$it"""" } ?: ""
+                """{"id":"$wamid","from":"$remitente","timestamp":"1","type":"image","image":{"id":"media-$wamid","mime_type":"image/png"$pie}}"""
             } else {
                 """{"id":"$wamid","from":"$remitente","timestamp":"1","type":"text","text":{"body":"$cuerpo"}}"""
             }
@@ -171,6 +196,9 @@ class WhatsAppQueueConsumerTest {
     }
 
     private companion object {
+        /** Prefijo para pedirle a [webhook] una foto (lo que siga es el pie). */
+        const val FOTO = "foto:"
+
         const val SALIENTES = """
             SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
             WHERE c.external_ref = '%s' AND m.direction = 'out'

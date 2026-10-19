@@ -107,6 +107,60 @@ open class WhatsAppCloudClient(
             document = WaSendDocument(id = m.mediaId, filename = m.filename, caption = m.caption),
         )
         is WhatsAppOutbound.Sticker -> WaSendRequest(to = to, type = "sticker", sticker = WaSendMedia(m.mediaId))
+        is WhatsAppOutbound.Image -> WaSendRequest(
+            to = to,
+            type = "image",
+            image = WaSendImage(m.mediaId, m.caption?.take(LARGO_PIE_IMAGEN)),
+        )
+    }
+
+    /**
+     * Baja una foto que mando el cliente. Son dos pasos: `GET /{media_id}`
+     * devuelve una URL temporal (dura minutos) y esa URL se baja con el mismo
+     * token. Los bytes quedan solo en memoria.
+     *
+     * @param maxBytes tope de tamaño: se revisa con lo que declara Meta antes
+     * de bajar, y otra vez con lo que llego.
+     */
+    open fun descargarMedia(mediaId: String, maxBytes: Long): MediaDescargada {
+        if (accessToken.isBlank()) {
+            throw WhatsAppSendException("WHATSAPP_ACCESS_TOKEN no esta definida: no se puede bajar media de WhatsApp")
+        }
+        val info = HttpRequest.newBuilder(URI("${graphUrl.trimEnd('/')}/$mediaId"))
+            .timeout(Duration.ofSeconds(15))
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "application/json")
+            .GET()
+            .build()
+        val crudo = try {
+            cliente.send(info, HttpResponse.BodyHandlers.ofString())
+        } catch (e: Exception) {
+            throw WhatsAppSendException("No se pudo contactar a la Graph API: ${e.javaClass.simpleName} ${e.message.orEmpty()}", e)
+        }
+        if (crudo.statusCode() !in 200..299) {
+            throw WhatsAppSendException("Meta no entrego la media $mediaId (${crudo.statusCode()}): ${crudo.body().orEmpty().take(300)}")
+        }
+        val meta = runCatching { json.readValue(crudo.body(), WaMediaInfo::class.java) }.getOrNull()
+            ?: throw WhatsAppSendException("Meta respondio algo ilegible para la media $mediaId")
+        val url = meta.url ?: throw WhatsAppSendException("Meta no devolvio URL para la media $mediaId")
+        meta.fileSize?.let { if (it > maxBytes) throw MediaDemasiadoGrandeException(it, maxBytes) }
+
+        val bajada = HttpRequest.newBuilder(URI(url))
+            .timeout(Duration.ofSeconds(30))
+            .header("Authorization", "Bearer $accessToken")
+            .GET()
+            .build()
+        val archivo = try {
+            cliente.send(bajada, HttpResponse.BodyHandlers.ofByteArray())
+        } catch (e: Exception) {
+            throw WhatsAppSendException("No se pudo bajar la media $mediaId: ${e.javaClass.simpleName}", e)
+        }
+        if (archivo.statusCode() !in 200..299) {
+            throw WhatsAppSendException("Meta rechazo la descarga de la media $mediaId (${archivo.statusCode()})")
+        }
+        val bytes = archivo.body() ?: ByteArray(0)
+        if (bytes.size > maxBytes) throw MediaDemasiadoGrandeException(bytes.size.toLong(), maxBytes)
+        return MediaDescargada(bytes, meta.mimeType ?: archivo.headers().firstValue("Content-Type").orElse(null))
     }
 
     /**
@@ -169,6 +223,7 @@ data class WaSendRequest(
     @Nullable val interactive: WaSendInteractive? = null,
     @Nullable val document: WaSendDocument? = null,
     @Nullable val sticker: WaSendMedia? = null,
+    @Nullable val image: WaSendImage? = null,
 )
 
 /** El `text` de un mensaje de texto: `{"body": "..."}`. */
@@ -197,6 +252,7 @@ data class WaSendInteractive(
 /** Limites de Meta para un interactivo con botones. */
 private const val LARGO_CUERPO = 1024
 private const val LARGO_PIE = 60
+private const val LARGO_PIE_IMAGEN = 1024
 
 @Serdeable
 data class WaSendAction(val buttons: List<WaSendButton>)
@@ -220,6 +276,25 @@ data class WaSendDocument(
 /** Media ya subida a Meta, referida por su id. */
 @Serdeable
 data class WaSendMedia(val id: String)
+
+/** `image` de un mensaje: media ya subida y un pie (Meta admite hasta 1024 caracteres). */
+@Serdeable
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class WaSendImage(val id: String, @Nullable val caption: String? = null)
+
+/** Respuesta de `GET /{media_id}`: de donde bajarla y que es. */
+@Serdeable
+data class WaMediaInfo(
+    @Nullable val url: String? = null,
+    @JsonProperty("mime_type") @Nullable val mimeType: String? = null,
+    @JsonProperty("file_size") @Nullable val fileSize: Long? = null,
+)
+
+/** Una media ya bajada. Vive solo en memoria mientras dura el turno. */
+class MediaDescargada(val bytes: ByteArray, val mimeType: String?)
+
+class MediaDemasiadoGrandeException(val bytes: Long, val maximo: Long) :
+    RuntimeException("La media pesa $bytes bytes y el maximo es $maximo")
 
 @Serdeable
 data class WaMediaResponse(@Nullable val id: String? = null)

@@ -1,0 +1,18 @@
+# Lectura de fotos del cliente (agente de WhatsApp).
+#
+# Solo se marca que modelo ve imagenes. Las fotos NO se guardan: se bajan de
+# Meta al atender el turno, se leen y se descartan; en `messages` queda la
+# lectura en texto.
+databaseChangeLog:
+
+  - changeSet:
+      id: 070-ai-models-supports-vision
+      author: stackline
+      comment: El modelo acepta imagenes de entrada. Por defecto no; se activa por modelo.
+      changes:
+        - addColumn:
+            tableName: ai_models
+            columns:
+              - column: { name: supports_vision, type: BOOLEAN, defaultValueBoolean: false, constraints: { nullable: false } }
+      rollback:
+        - dropColumn: { tableName: ai_models, columnName: supports_vision }

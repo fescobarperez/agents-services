@@ -1,0 +1,24 @@
+# El cliente aprueba la imagen de ejemplo: se guarda en la cotizacion del ERP
+# (ficha + render) para el asesor.
+databaseChangeLog:
+
+  - changeSet:
+      id: 100-tools-aprobar-diseno
+      author: stackline
+      comment: Herramienta para aprobar el diseño (render) y guardarlo en la cotizacion.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve)
+              SELECT a.id, 'cotizacion.aprobar_diseno', 'read', true
+              FROM ai_agents a
+              WHERE a.code = 'ventas'
+                AND NOT EXISTS (
+                    SELECT 1 FROM ai_agent_tools x WHERE x.agent_id = a.id AND x.tool_pattern = 'cotizacion.aprobar_diseno'
+                );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM ai_agent_tools
+               WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas')
+                 AND tool_pattern = 'cotizacion.aprobar_diseno';

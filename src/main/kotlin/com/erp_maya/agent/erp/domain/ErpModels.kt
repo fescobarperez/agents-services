@@ -54,6 +54,47 @@ data class ProductSummary(
     @Nullable val available: BigDecimal? = null,
     /** Sucursal, solo si todo el stock esta en una. */
     @Nullable val branch: String? = null,
+    /** Lo propuso el asistente y aun no lo revisa nadie: no tiene precio. */
+    @Nullable val pendingReview: Boolean? = null,
+)
+
+/** PUT /api/quotes/{id}/design (QuoteDesignDtos.Save del ERP): ficha + render aprobado. */
+@Serdeable
+data class QuoteDesignWrite(
+    val spec: QuoteDesignSpec,
+    @Nullable val renderNumber: Int? = null,
+    @Nullable val renderMax: Int? = null,
+    @Nullable val imageBase64: String? = null,
+    @Nullable val imageMime: String? = null,
+)
+
+@Serdeable
+data class QuoteDesignSpec(
+    @Nullable val tipo: String? = null,
+    @Nullable val descripcion: String? = null,
+    @Nullable val material: String? = null,
+    @Nullable val acabado: String? = null,
+    @Nullable val alto: BigDecimal? = null,
+    @Nullable val ancho: BigDecimal? = null,
+    @Nullable val profundidad: BigDecimal? = null,
+    @Nullable val medidasConfirmadas: Boolean? = null,
+    @Nullable val detalles: Map<String, String>? = null,
+)
+
+/** Respuesta del ERP al guardar el diseño; solo interesa que exista. */
+@Serdeable
+data class QuoteDesignAck(@Nullable val quoteId: Long? = null, @Nullable val hasImage: Boolean? = null)
+
+/** POST /api/products/proposals (ProductReviewDtos.Proposal del ERP). */
+@Serdeable
+data class ProductProposal(
+    val name: String,
+    @Nullable val category: String? = null,
+    @Nullable val notes: String? = null,
+    @Nullable val height: BigDecimal? = null,
+    @Nullable val width: BigDecimal? = null,
+    @Nullable val depth: BigDecimal? = null,
+    @Nullable val dimensionUnit: String? = null,
 )
 
 @Serdeable

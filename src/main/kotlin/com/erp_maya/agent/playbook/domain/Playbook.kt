@@ -26,6 +26,8 @@ data class Playbook(
     val cotizacion: CotizacionConfig = CotizacionConfig(),
     /** Textos fijos de los avisos al cliente; las cifras las pone el ERP. */
     val mensajes: Mensajes = Mensajes(),
+    /** Fotos del cliente. Apagado por defecto: leerlas cuesta una llamada extra al modelo. */
+    val imagenes: ImagenesConfig = ImagenesConfig(),
 ) {
     fun audiencia(kindCanal: String): String = audiencias[kindCanal.lowercase()] ?: AUDIENCIA_CLIENTE
 
@@ -34,6 +36,26 @@ data class Playbook(
         const val AUDIENCIA_VENDEDOR = "vendedor"
     }
 }
+
+/**
+ * Fotos que manda el cliente.
+ *
+ * Con `aceptar = false` la foto no se lee: el agente le pide al cliente que
+ * describa lo que necesita. Las que pasen de `max_por_turno` se ignoran y el
+ * agente lo dice.
+ */
+@Serdeable
+data class ImagenesConfig(
+    val aceptar: Boolean = false,
+    @JsonProperty("max_por_turno") val maxPorTurno: Int = 3,
+    /**
+     * El agente puede mostrar como quedaria lo cotizado editando la foto del
+     * cliente. Necesita ademas un modelo de imagenes en el agente.
+     */
+    @JsonProperty("generar_renders") val generarRenders: Boolean = false,
+    /** Renders por cotizacion. */
+    @JsonProperty("renders_max") val rendersMax: Int = 3,
+)
 
 @Serdeable
 data class Negocio(
@@ -78,6 +100,8 @@ data class CotizacionConfig(
     val cierre: Cierre = Cierre(),
     val envio: Envio = Envio(),
     val reapertura: Reapertura = Reapertura(),
+    /** Si el asistente puede crear productos que no estan en el catalogo. */
+    @JsonProperty("productos_nuevos") val productosNuevos: ProductosNuevos = ProductosNuevos(),
 ) {
     /** Los que el cliente tiene que dar y se guardan con `cotizacion.dato`. */
     fun datosDelCliente(): List<DatoRequerido> = datosRequeridos.filter { it.origen != DatoRequerido.ORIGEN_SISTEMA }
@@ -106,6 +130,22 @@ data class DatoRequerido(
         const val LINEAS = "lineas"
     }
 }
+
+/**
+ * Productos que el cliente pide y no estan en el catalogo.
+ *
+ * Con `permitido` el asistente crea el producto SIN precio y pendiente de
+ * revision; la linea queda por cotizar y el asesor le pone precio. Solo si
+ * pertenece a una de las `lineas` (nombres de categorias del ERP); con la
+ * lista vacia vale cualquier categoria que exista. Si no aplica, el agente le
+ * dice al cliente `mensaje_fuera_de_linea`.
+ */
+@Serdeable
+data class ProductosNuevos(
+    val permitido: Boolean = false,
+    val lineas: List<String> = emptyList(),
+    @JsonProperty("mensaje_fuera_de_linea") @Nullable val mensajeFueraDeLinea: String? = null,
+)
 
 /** Cuando una cotizacion deja de estar en curso y lo siguiente va en otra. */
 @Serdeable

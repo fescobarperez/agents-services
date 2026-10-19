@@ -167,6 +167,31 @@ class PromptBuilder {
         append("- Si un asesor ya la tomo, no la tocas: registra cada cambio con cotizacion.solicitar_cambio y dile que el asesor le respondera.\n")
         append("- Descuentos, negociacion y cambios sobre cotizaciones en revision siempre van como solicitud; nunca los prometas.\n")
         append("- Si un producto tiene medidas (dimensions), confirma si lo quiere en esa medida estandar o en otra y pasa las que pida en cotizacion.agregar. El sistema calcula el precio de la medida especial (precio_medida); si dice 'por cotizar', la linea queda sin precio y el asesor la cotiza: diselo al cliente y no inventes un monto.\n")
+        if (playbook.imagenes.aceptar) {
+            append("- Fotos: lo que el cliente manda en foto te llega como lectura en texto ([Foto del cliente] o 'Lectura automatica'). ")
+            append("Las medidas que salen de una foto son estimadas: confirmalas SIEMPRE con el cliente antes de pasarlas a cotizacion.agregar. ")
+            append("Si la lectura dice que es un documento personal, no repitas ni pidas sus datos.\n")
+        }
+        append("- Algo a la medida o con fotos: lleva la ficha de diseño con cotizacion.diseno (tipo, medidas, material, acabado y detalles como aguas o cubierta). Pregunta lo que falte en un solo mensaje.\n")
+        if (playbook.imagenes.generarRenders) {
+            append("- Imagenes de ejemplo: si el cliente quiere ver como quedaria y mando foto del lugar, completa la ficha ")
+            append("(tipo, medidas, material, acabado y lo que aplique: aguas, cubierta, deck…) preguntando todo en un solo mensaje, ")
+            append("y luego usa cotizacion.render. Maximo ").append(playbook.imagenes.rendersMax).append(" por cotizacion: no gastes una ")
+            append("para preguntar. Cada ajuste: actualiza la ficha y pide otro render con el cambio. Cuando le guste, ")
+            append("usa cotizacion.aprobar_diseno, confirma las medidas y arma la cotizacion.\n")
+        } else {
+            append("- No generas imagenes de ejemplo: si las piden, ofrece describirlo o que un asesor comparta fotos de trabajos similares.\n")
+        }
+        val nuevos = c.productosNuevos
+        if (nuevos.permitido) {
+            append("- Si lo que pide no esta en el catalogo (buscalo antes con productos.search) y es de ")
+            append(if (nuevos.lineas.isEmpty()) "lo que vende la empresa" else "estas lineas: " + nuevos.lineas.joinToString(", "))
+            append(", registralo con cotizacion.producto_nuevo y agregalo con cotizacion.agregar: la linea queda por cotizar y el asesor confirma el precio.\n")
+        } else {
+            append("- No creas productos fuera del catalogo. Si lo que pide no esta, ")
+            append(nuevos.mensajeFueraDeLinea?.let { "dile: «$it»" } ?: "dile que un asesor revisara su pedido y lo contactara")
+            append(".\n")
+        }
         append("- Si pregunta por que se rechazo o ajusto algo: cotizacion.solicitudes y explica con el motivo y la respuesta del asesor, sin agregar razones propias. Si no le basta, cotizacion.consultar.\n")
         append("Decision del cliente sobre la cotizacion ENVIADA por su asesor (pendiente_decision=true en cotizacion.listar):\n")
         append("- Normalmente decide con los botones Aprobar / Comentarios / Rechazar. Si lo dice por texto, confirma numero y total y usa cotizacion.aprobar o cotizacion.rechazar.\n")
@@ -229,6 +254,23 @@ class PromptBuilder {
             append("- lineas en espera de cliente: ")
             append(pendientes.joinToString("; ") { "${it.quantity.toPlainString()} × ${it.name} (productId ${it.productId})" })
             append('\n')
+        }
+        b?.diseno?.let { f ->
+            append("- ficha de diseño: ").append(f.texto().ifBlank { "vacia" }).append('\n')
+            f.productoId?.let { id ->
+                append("  producto: ").append(f.productoNombre ?: "").append(" (productId ").append(id).append(')')
+                if (f.productoPendiente) append(", pendiente de revision: sin precio, lo cotiza el asesor")
+                append('\n')
+            }
+            if (f.renders > 0) {
+                append("  imagenes de ejemplo enviadas: ").append(f.renders).append(" de ").append(playbook.imagenes.rendersMax)
+                if (f.renderAprobado != null) append(" (el cliente ya aprobo una)")
+                append('\n')
+            }
+            if (f.medidasSinConfirmar()) {
+                append("  Las medidas NO estan confirmadas: muestraselas al cliente y, cuando diga que si, ")
+                append("usa cotizacion.confirmar_medidas antes de agregarlas.\n")
+            }
         }
         append("Checklist:\n")
         QuoteChecklist.calcular(b, playbook).forEach { item ->

@@ -10,6 +10,9 @@ import com.erp_maya.agent.erp.domain.QuoteLineWrite
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.IssuedQuote
 import com.erp_maya.agent.erp.domain.Dimensions
+import com.erp_maya.agent.erp.domain.ProductProposal
+import com.erp_maya.agent.erp.domain.QuoteDesignAck
+import com.erp_maya.agent.erp.domain.QuoteDesignWrite
 import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.erp.domain.QuotePreview
@@ -47,12 +50,14 @@ data class ErpProduct(
     @Nullable val dimensionUnit: String? = null,
     @Nullable val tracksStock: Boolean? = null,
     @Nullable val itemType: String? = null,
+    @Nullable val reviewStatus: String? = null,
 ) {
     fun resumen() = ProductSummary(
         id = id, sku = sku, name = name, unitPrice = price, unit = unit,
         dimensions = Dimensions.de(height, width, depth), dimensionUnit = dimensionUnit,
         // Sin control de existencias (o servicio): se hace bajo pedido.
         madeToOrder = (tracksStock == false || itemType.equals("service", ignoreCase = true)).takeIf { it },
+        pendingReview = (reviewStatus == "pending").takeIf { it },
     )
 }
 
@@ -305,6 +310,15 @@ open class ErpHttpClient(
     override fun getProduct(tenantId: Long, conversationId: Long, productId: Long): ProductSummary? =
         uno(HttpRequest.GET<Any>("/api/products/$productId"), tenantId, conversationId, ErpProduct::class.java)
             ?.resumen()
+
+    override fun proposeProduct(tenantId: Long, conversationId: Long, propuesta: ProductProposal): ProductSummary =
+        uno(HttpRequest.POST("/api/products/proposals", propuesta), tenantId, conversationId, ErpProduct::class.java)
+            ?.resumen()
+            ?: throw ErpException("El ERP no devolvio el producto propuesto")
+
+    override fun saveQuoteDesign(tenantId: Long, conversationId: Long, quoteId: Long, diseno: QuoteDesignWrite): QuoteDesignAck =
+        uno(HttpRequest.PUT("/api/quotes/$quoteId/design", diseno), tenantId, conversationId, QuoteDesignAck::class.java)
+            ?: throw ErpException("La cotizacion $quoteId no existe en el ERP")
 
     override fun createProspectQuote(
         tenantId: Long,

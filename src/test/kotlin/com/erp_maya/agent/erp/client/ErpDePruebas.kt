@@ -3,6 +3,9 @@ package com.erp_maya.agent.erp.client
 import com.erp_maya.agent.erp.domain.CompanyInfo
 import com.erp_maya.agent.erp.domain.CustomerSummary
 import com.erp_maya.agent.erp.domain.IssuedQuote
+import com.erp_maya.agent.erp.domain.ProductProposal
+import com.erp_maya.agent.erp.domain.QuoteDesignAck
+import com.erp_maya.agent.erp.domain.QuoteDesignWrite
 import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.erp.domain.QuotePreview
@@ -27,9 +30,17 @@ class ErpDePruebas : ErpClient {
 
     var totalPreview: BigDecimal = BigDecimal("1800.00")
 
+    /** Diseños guardados en cotizaciones: quoteId → lo que se mando. */
+    val disenos = mutableMapOf<Long, QuoteDesignWrite>()
+
+    /** Productos que el asistente propuso. */
+    val propuestas = mutableListOf<ProductProposal>()
+
     fun limpiar() {
         emisiones.clear()
         tenantsVistos.clear()
+        propuestas.clear()
+        disenos.clear()
         // Tambien el total: el bean es singleton y sin esto un test que lo sube
         // contamina al siguiente segun el orden en que corran.
         totalPreview = BigDecimal("1800.00")
@@ -76,5 +87,18 @@ class ErpDePruebas : ErpClient {
     override fun getCompany(tenantId: Long, conversationId: Long): CompanyInfo {
         tenantsVistos += tenantId
         return CompanyInfo(tenantId, "Empresa de pruebas", "GTQ", BigDecimal("5"), null, true)
+    }
+
+    override fun proposeProduct(tenantId: Long, conversationId: Long, propuesta: ProductProposal): ProductSummary {
+        tenantsVistos += tenantId
+        propuestas += propuesta
+        return ProductSummary(900 + propuestas.size.toLong(), "ASIS-${propuestas.size}", propuesta.name, null, "Unidad",
+            pendingReview = true)
+    }
+
+    override fun saveQuoteDesign(tenantId: Long, conversationId: Long, quoteId: Long, diseno: QuoteDesignWrite): QuoteDesignAck {
+        tenantsVistos += tenantId
+        disenos[quoteId] = diseno
+        return QuoteDesignAck(quoteId, diseno.imageBase64 != null)
     }
 }

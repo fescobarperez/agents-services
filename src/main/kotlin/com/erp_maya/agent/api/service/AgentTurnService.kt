@@ -1,6 +1,7 @@
 package com.erp_maya.agent.api.service
 
 import com.erp_maya.agent.api.dto.AgentEvent
+import com.erp_maya.agent.api.dto.InputImage
 import com.erp_maya.agent.api.dto.TokenUsage
 import com.erp_maya.agent.api.dto.TurnRequest
 import com.erp_maya.agent.api.dto.TurnResponse
@@ -17,11 +18,13 @@ import com.erp_maya.agent.conversation.service.ConversationService
 import com.erp_maya.agent.model.repository.AgentRunRepository
 import com.erp_maya.agent.playbook.service.PlaybookService
 import com.erp_maya.agent.tools.service.ConfirmationDetector
+import com.erp_maya.agent.prompt.domain.FotoCliente
 import com.erp_maya.agent.prompt.domain.SessionState
 import com.erp_maya.agent.prompt.service.PromptBuilder
 import com.erp_maya.agent.summary.service.ConversationSummarizer
 import com.erp_maya.agent.quote.PanelActionService
 import com.erp_maya.agent.quote.QuoteDraftService
+import com.erp_maya.agent.vision.service.LectorImagenes
 import io.micronaut.serde.ObjectMapper
 import jakarta.inject.Singleton
 import org.slf4j.LoggerFactory
@@ -45,6 +48,7 @@ open class AgentTurnService(
     private val acciones: PanelActionService,
     private val borradores: QuoteDraftService,
     private val playbooks: PlaybookService,
+    private val lector: LectorImagenes,
 ) {
 
     /**
@@ -114,12 +118,45 @@ open class AgentTurnService(
         val identificado = if (telefono == null) resumido
         else resumido.copy(borrador = borradores.identificarPorTelefono(contexto, conversationId, resumido.borrador, telefono))
 
+        val playbook = playbooks.para(contexto)
+
+        // Fotos: se leen ANTES del bucle y llegan al modelo como texto. En el
+        // historial la marca de cada foto se cambia por su lectura; la imagen
+        // no se guarda en ningun lado.
+        // Solo el canal de WhatsApp manda fotos (por media id de Meta): un
+        // llamante externo no puede pedir que se baje media con nuestro token.
+        val fotosDelCanal = request.input.images?.takeIf { it.isNotEmpty() && contexto.channel.kind == CANAL_WHATSAPP }
+        val lectura = fotosDelCanal?.let { fotos ->
+            lector.leer(contexto, playbook, fotos, request.input.text).also { r ->
+                r.lecturas.forEach { l ->
+                    l.messageId?.let { conversaciones.guardarLecturaFoto(conversationId, it, LectorImagenes.MARCA_FOTO, l.texto) }
+                }
+                r.corrida?.let { c ->
+                    corridas.record(
+                        turnId = turnId,
+                        conversationId = conversationId,
+                        agentId = contexto.agent.id,
+                        modelId = c.model.id,
+                        promptVersionId = contexto.prompt.id,
+                        usage = c.completion.usage,
+                        toolsCalledJson = json.writeValueAsString(listOf(HERRAMIENTA_LECTURA)),
+                        latencyMs = c.latencyMs,
+                        fallbackUsed = c.fallbackUsed,
+                    )
+                }
+            }
+        }
+        val entrante = listOfNotNull(request.input.text?.takeIf { it.isNotBlank() }, lectura?.notaParaModelo)
+            .joinToString("\n\n")
+            .ifBlank { null }
+
         // Si la cotizacion en curso ya no es del agente (enviada, movida por un
         // vendedor, vencida por inactividad) se cierra ANTES de que el modelo
         // la vea: lo que pida el cliente va en una nueva y no se mezcla.
-        val playbook = playbooks.para(contexto)
         val estado = identificado.copy(
             borrador = borradores.revisarVigencia(contexto, conversationId, identificado.borrador, playbook),
+            // Las fotos de este turno, con su lectura, para poder hacer un render sobre ellas.
+            fotos = recordarFotos(identificado.fotos, fotosDelCanal, lectura),
         )
 
         // La ventana excluye los entrantes de ESTE turno para no duplicarlos:
@@ -129,7 +166,7 @@ open class AgentTurnService(
         val recientes = conversaciones.recientes(conversationId, PromptBuilder.VENTANA + LIMITE_RAFAGA)
             .filterNot { it.turnId == turnId && it.direction == Direction.IN }
 
-        val prompt = promptBuilder.build(contexto, estado, recientes, request.input.text, playbook)
+        val prompt = promptBuilder.build(contexto, estado, recientes, entrante, playbook)
 
         // La confirmacion se decide aqui y se le pasa a la compuerta ya
         // resuelta: interpretar un "si" a partir de texto libre no es algo que
@@ -256,6 +293,26 @@ open class AgentTurnService(
         return respuesta
     }
 
+    /** Las fotos nuevas al final; solo las ultimas [FotoCliente.MAXIMO]. */
+    private fun recordarFotos(
+        antes: List<FotoCliente>,
+        nuevas: List<InputImage>?,
+        lectura: LectorImagenes.Resultado?,
+    ): List<FotoCliente> {
+        if (nuevas.isNullOrEmpty()) return antes
+        val ahora = System.currentTimeMillis()
+        val agregadas = nuevas.map { f ->
+            FotoCliente(
+                mediaId = f.ref,
+                mimeType = f.mimeType,
+                messageId = f.messageId,
+                lectura = lectura?.lecturas?.firstOrNull { it.messageId == f.messageId }?.texto?.take(600),
+                recibidaMs = ahora,
+            )
+        }
+        return (antes + agregadas).distinctBy { it.mediaId }.takeLast(FotoCliente.MAXIMO)
+    }
+
     /** Un estado ilegible no puede tumbar el turno: se arranca de cero. */
     private fun leerEstado(conversationId: Long): SessionState =
         runCatching {
@@ -283,5 +340,8 @@ open class AgentTurnService(
         const val LIMITE_RAFAGA = 10
 
         const val CANAL_WHATSAPP = "whatsapp"
+
+        /** Como queda la lectura de fotos en `agent_runs.tools_called`. */
+        const val HERRAMIENTA_LECTURA = "vision.lectura"
     }
 }

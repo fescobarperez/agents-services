@@ -59,8 +59,30 @@ data class TurnInput(
     /** Con type = "action": que boton del panel se pulso (add_line, edit_line, send_quote). */
     @JsonProperty("action_id") @Nullable val actionId: String? = null,
     @Nullable val payload: Map<String, Any?>? = null,
+    /**
+     * Fotos que acompañan el texto, por referencia: el canal dice de donde
+     * bajarlas y el turno las descarga, las lee y las descarta. Nunca viajan
+     * los bytes en la peticion ni se guardan.
+     */
+    @Nullable val images: List<InputImage>? = null,
 ) {
     val esAccion: Boolean get() = type == "action" && !actionId.isNullOrBlank()
+
+    val conImagenes: Boolean get() = !images.isNullOrEmpty()
+}
+
+@Serdeable
+data class InputImage(
+    /** De donde se baja: hoy solo `whatsapp` (media id de Meta). */
+    val source: String,
+    val ref: String,
+    @JsonProperty("mime_type") @Nullable val mimeType: String? = null,
+    /** El mensaje del canal que la trajo (wamid): ahi se guarda su lectura. */
+    @JsonProperty("message_id") @Nullable val messageId: String? = null,
+) {
+    companion object {
+        const val SOURCE_WHATSAPP = "whatsapp"
+    }
 }
 
 @Serdeable

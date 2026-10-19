@@ -8,6 +8,9 @@ import com.erp_maya.agent.erp.domain.ErpChangeRequest
 import com.erp_maya.agent.erp.domain.ChangeRequestWrite
 import com.erp_maya.agent.erp.domain.ErpQuoteSummary
 import com.erp_maya.agent.erp.domain.IssuedQuote
+import com.erp_maya.agent.erp.domain.ProductProposal
+import com.erp_maya.agent.erp.domain.QuoteDesignAck
+import com.erp_maya.agent.erp.domain.QuoteDesignWrite
 import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.erp.domain.QuotePreview
@@ -73,6 +76,17 @@ interface ErpClient {
 
     fun getProduct(tenantId: Long, conversationId: Long, productId: Long): ProductSummary? =
         throw ErpException("getProduct no implementado")
+
+    /**
+     * Propone un producto que no esta en el catalogo. El ERP lo crea sin
+     * precio y pendiente de revision, o devuelve el que ya exista con ese nombre.
+     */
+    fun proposeProduct(tenantId: Long, conversationId: Long, propuesta: ProductProposal): ProductSummary =
+        throw ErpException("proposeProduct no implementado")
+
+    /** Guarda en la cotizacion el diseño que el cliente aprobo (ficha + render). */
+    fun saveQuoteDesign(tenantId: Long, conversationId: Long, quoteId: Long, diseno: QuoteDesignWrite): QuoteDesignAck =
+        throw ErpException("saveQuoteDesign no implementado")
 
     /** Crea la cotizacion como PROSPECTO del asistente. */
     fun createProspectQuote(

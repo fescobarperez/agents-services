@@ -1,0 +1,18 @@
+# Capacidad "edita imagenes" de un modelo, para que la consola solo ofrezca
+# como modelo de imagenes del agente (ai_agents.image_model_id) uno que sirva.
+# supports_vision (07) dice si lee fotos; generates_images, si las genera/edita.
+databaseChangeLog:
+
+  - changeSet:
+      id: 110-models-generates-images
+      author: stackline
+      comment: Modelos que generan o editan imagenes (renders).
+      changes:
+        - addColumn:
+            tableName: ai_models
+            columns:
+              - column: { name: generates_images, type: BOOLEAN, defaultValueBoolean: false, constraints: { nullable: false } }
+        - sql:
+            sql: UPDATE ai_models SET generates_images = TRUE WHERE model_name LIKE 'gpt-image%' OR model_name LIKE 'dall-e%'
+      rollback:
+        - dropColumn: { tableName: ai_models, columnName: generates_images }

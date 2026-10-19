@@ -1,0 +1,90 @@
+# Renders: el agente edita la foto del cliente para mostrarle como quedaria
+# lo que se esta cotizando.
+#
+# - ai_agents.image_model_id: el modelo que edita imagenes (aparte del de chat).
+# - ai_models.image_cost: costo por imagen en USD, para uso y costos.
+# - render_jobs: cola propia. Un render tarda 10-30 s y no puede correr dentro
+#   del turno (bloquearia a los demas clientes): el turno lo encola y un
+#   consumidor aparte lo genera, lo sube a Meta y lo envia.
+databaseChangeLog:
+
+  - changeSet:
+      id: 090-render-models
+      author: stackline
+      comment: Modelo de imagenes por agente y costo por imagen.
+      changes:
+        - addColumn:
+            tableName: ai_models
+            columns:
+              - column: { name: image_cost, type: 'NUMERIC(10,4)', defaultValueNumeric: 0, constraints: { nullable: false } }
+        - addColumn:
+            tableName: ai_agents
+            columns:
+              - column: { name: image_model_id, type: BIGINT, constraints: { foreignKeyName: fk_ai_agents_image_model, references: 'ai_models(id)' } }
+      rollback:
+        - dropColumn: { tableName: ai_agents, columnName: image_model_id }
+        - dropColumn: { tableName: ai_models, columnName: image_cost }
+
+  - changeSet:
+      id: 091-render-jobs
+      author: stackline
+      comment: Cola de renders. Guarda referencias (media id de Meta, prompt), nunca imagenes.
+      changes:
+        - createTable:
+            tableName: render_jobs
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: conversation_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_render_conversation, references: 'conversations(id)' } }
+              - column: { name: tenant_id, type: BIGINT, constraints: { nullable: false } }
+              # Cuenta de WhatsApp que envia (sin el prefijo wa:) y a quien.
+              - column: { name: account_ref, type: VARCHAR(120), constraints: { nullable: false } }
+              - column: { name: recipient, type: VARCHAR(180), constraints: { nullable: false } }
+              - column: { name: model_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_render_model, references: 'ai_models(id)' } }
+              # Foto base en Meta: se vuelve a bajar al generar.
+              - column: { name: base_media_id, type: VARCHAR(120), constraints: { nullable: false } }
+              - column: { name: prompt, type: TEXT, constraints: { nullable: false } }
+              - column: { name: render_number, type: INT, constraints: { nullable: false } }
+              - column: { name: render_max, type: INT, constraints: { nullable: false } }
+              - column: { name: status, type: VARCHAR(20), defaultValue: pending, constraints: { nullable: false } }
+              - column: { name: attempts, type: INT, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: available_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: locked_by, type: VARCHAR(80) }
+              - column: { name: locked_at, type: TIMESTAMPTZ }
+              - column: { name: last_error, type: TEXT }
+              - column: { name: cost_usd, type: 'NUMERIC(10,4)' }
+              # Media id del render en Meta y wamid del envio: para adjuntarlo a la cotizacion despues.
+              - column: { name: result_media_id, type: VARCHAR(120) }
+              - column: { name: sent_message_id, type: VARCHAR(180) }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: finished_at, type: TIMESTAMPTZ }
+        - sql:
+            sql: ALTER TABLE render_jobs ADD CONSTRAINT ck_render_status CHECK (status IN ('pending', 'processing', 'done', 'failed'))
+        - createIndex:
+            tableName: render_jobs
+            indexName: ix_render_pendientes
+            columns:
+              - column: { name: status }
+              - column: { name: available_at }
+      rollback:
+        - dropTable: { tableName: render_jobs }
+
+  - changeSet:
+      id: 092-tools-render
+      author: stackline
+      comment: Herramienta para pedir un render. Si se usa o no lo decide el playbook (imagenes.generar_renders).
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve)
+              SELECT a.id, 'cotizacion.render', 'read', true
+              FROM ai_agents a
+              WHERE a.code = 'ventas'
+                AND NOT EXISTS (
+                    SELECT 1 FROM ai_agent_tools x WHERE x.agent_id = a.id AND x.tool_pattern = 'cotizacion.render'
+                );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM ai_agent_tools
+               WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'ventas')
+                 AND tool_pattern = 'cotizacion.render';

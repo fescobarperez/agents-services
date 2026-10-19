@@ -16,3 +16,13 @@ databaseChangeLog:
       file: db/changelog/changes/05-seed.yaml
   - include:
       file: db/changelog/changes/06-playbooks.yaml
+  - include:
+      file: db/changelog/changes/07-vision.yaml
+  - include:
+      file: db/changelog/changes/08-diseno.yaml
+  - include:
+      file: db/changelog/changes/09-renders.yaml
+  - include:
+      file: db/changelog/changes/10-diseno-aprobado.yaml
+  - include:
+      file: db/changelog/changes/11-modelos-imagen.yaml

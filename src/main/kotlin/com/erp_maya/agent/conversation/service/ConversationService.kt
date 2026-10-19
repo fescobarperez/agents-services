@@ -39,6 +39,11 @@ open class ConversationService(
         conversaciones.appendMessage(conversationId, turnId, externalId, Direction.IN, texto)
     }
 
+    /** En el entrante de una foto, cambia la marca por la lectura en texto. */
+    open fun guardarLecturaFoto(conversationId: Long, externalId: String, marca: String, lectura: String) {
+        conversaciones.replaceInboundMarker(conversationId, externalId, marca, lectura)
+    }
+
     /** Enlaza al turno los entrantes que se registraron al llegar por la cola. */
     open fun enlazarEntrantes(conversationId: Long, turnId: Long, externalIds: List<String>) =
         conversaciones.linkToTurn(conversationId, turnId, externalIds)

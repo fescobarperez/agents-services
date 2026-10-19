@@ -24,6 +24,9 @@ sealed interface WhatsAppOutbound {
 
     /** Documento ya subido a Meta (p. ej. el PDF que se bajo del ERP). */
     data class DocumentMedia(val mediaId: String, val filename: String, val caption: String?) : WhatsAppOutbound
+
+    /** Imagen ya subida a Meta (el render del diseño), con un pie opcional. */
+    data class Image(val mediaId: String, val caption: String?) : WhatsAppOutbound
 }
 
 /**

@@ -2,6 +2,8 @@ package com.erp_maya.agent.model.service
 
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.context.domain.ModelRef
+import com.erp_maya.agent.model.domain.ImagenGenerada
+import com.erp_maya.agent.model.domain.ImagenParaModelo
 import com.erp_maya.agent.model.domain.ModelCompletion
 import com.erp_maya.agent.model.domain.ModelOptions
 import com.erp_maya.agent.model.domain.ModelPrompt
@@ -71,6 +73,39 @@ open class ModelRouter(proveedores: List<ModelProvider>) {
 
             RoutedCompletion(invocar(respaldo, prompt, tools, opciones), respaldo, true, transcurrido(inicio))
         }
+    }
+
+    /**
+     * Pregunta con imagenes (lectura de fotos). Mismo criterio de respaldo:
+     * un intento con el principal y uno con el respaldo. Quien llama ya
+     * escogio dos modelos que ven imagenes; aqui no se vuelve a revisar.
+     */
+    open fun completeWithImages(
+        principal: ModelRef,
+        respaldo: ModelRef?,
+        opciones: ModelOptions,
+        instrucciones: String,
+        imagenes: List<ImagenParaModelo>,
+    ): RoutedCompletion {
+        val inicio = System.nanoTime()
+        fun con(model: ModelRef): ModelCompletion {
+            val proveedor = porCodigo[model.providerCode] ?: throw UnknownProviderException(model.providerCode)
+            return proveedor.completeWithImages(model, instrucciones, imagenes, opciones)
+        }
+        return try {
+            RoutedCompletion(con(principal), principal, false, transcurrido(inicio))
+        } catch (falloPrincipal: Exception) {
+            if (respaldo == null) throw falloPrincipal
+            log.warn("lectura de imagenes con {} fallo ({}); reintentando con {}",
+                principal.modelName, falloPrincipal.javaClass.simpleName, respaldo.modelName)
+            RoutedCompletion(con(respaldo), respaldo, true, transcurrido(inicio))
+        }
+    }
+
+    /** Render: un solo intento con el modelo de imagenes del agente (no hay respaldo). */
+    open fun editImage(model: ModelRef, instrucciones: String, foto: ImagenParaModelo, timeoutMs: Int): ImagenGenerada {
+        val proveedor = porCodigo[model.providerCode] ?: throw UnknownProviderException(model.providerCode)
+        return proveedor.editImage(model, instrucciones, foto, timeoutMs)
     }
 
     private fun invocar(

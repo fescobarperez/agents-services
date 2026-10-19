@@ -22,6 +22,8 @@ data class ExecutionContext(
     val prompt: PromptRef,
     val tools: List<ToolGrant>,
     val policy: TenantPolicy,
+    /** Modelo que edita imagenes (renders). Nulo = el agente no genera renders. */
+    val imageModel: ModelRef? = null,
 ) {
     /** Permiso vigente para una herramienta, o null si el agente no la tiene. */
     fun toolFor(name: String): ToolGrant? = tools.firstOrNull { it.matches(name) }
@@ -73,6 +75,8 @@ data class ModelRef(
     val contextWindow: Int,
     val supportsTools: Boolean,
     val supportsCache: Boolean,
+    /** Acepta imagenes de entrada (lectura de fotos). */
+    val supportsVision: Boolean = false,
 )
 
 @Serdeable

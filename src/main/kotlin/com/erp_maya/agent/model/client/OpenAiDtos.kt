@@ -15,6 +15,38 @@ data class OpenAiRequest(
     @Nullable val tools: List<OpenAiTool>? = null,
 )
 
+/**
+ * Cuerpo de `POST /chat/completions` con imagenes. Va aparte del de texto
+ * porque aqui `content` es una lista de partes (texto e `image_url`) y alla un
+ * texto; mezclar ambos en un solo tipo obligaria a serializar `Any`.
+ */
+@Serdeable
+data class OpenAiVisionRequest(
+    val model: String,
+    val messages: List<OpenAiPartsMessage>,
+    @Nullable val temperature: Double? = null,
+    @JsonProperty("max_completion_tokens") @Nullable val maxCompletionTokens: Int? = null,
+)
+
+@Serdeable
+data class OpenAiPartsMessage(val role: String, val content: List<OpenAiContentPart>)
+
+@Serdeable
+data class OpenAiContentPart(
+    val type: String,
+    @Nullable val text: String? = null,
+    @JsonProperty("image_url") @Nullable val imageUrl: OpenAiImageUrl? = null,
+) {
+    companion object {
+        fun texto(t: String) = OpenAiContentPart(type = "text", text = t)
+        fun imagen(dataUrl: String) = OpenAiContentPart(type = "image_url", imageUrl = OpenAiImageUrl(dataUrl))
+    }
+}
+
+/** La imagen va embebida como `data:<mime>;base64,...`: no hay URL publica que darle. */
+@Serdeable
+data class OpenAiImageUrl(val url: String, @Nullable val detail: String? = null)
+
 @Serdeable
 data class OpenAiMessage(
     val role: String,
@@ -81,4 +113,14 @@ data class OpenAiUsage(
 @Serdeable
 data class OpenAiPromptDetails(
     @JsonProperty("cached_tokens") val cachedTokens: Int = 0,
+)
+
+/** Respuesta de `POST /images/edits`: la imagen viene en base64. */
+@Serdeable
+data class OpenAiImageResponse(@Nullable val data: List<OpenAiImageData>? = null)
+
+@Serdeable
+data class OpenAiImageData(
+    @JsonProperty("b64_json") @Nullable val b64Json: String? = null,
+    @Nullable val url: String? = null,
 )
