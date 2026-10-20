@@ -160,6 +160,12 @@ data class FichaDiseno(
     @Nullable val renderAprobado: Long? = null,
     /** Ya se guardo en la cotizacion del ERP (ficha + imagen). */
     val disenoAdjunto: Boolean = false,
+    /**
+     * Lo que dibuja el render cuando se cotizo con plantilla: producto y el
+     * texto de cada eleccion («techo de shingle gris sobre plywood»). Asi lo que
+     * se ve en la imagen es exactamente lo que se cotizo.
+     */
+    @Nullable val renderPlantilla: String? = null,
 ) {
     /** Hay medidas sacadas de una foto que el cliente aun no confirmo. */
     fun medidasSinConfirmar(): Boolean = medidas != null && !medidasConfirmadas

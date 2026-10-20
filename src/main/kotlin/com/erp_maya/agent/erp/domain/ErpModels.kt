@@ -136,6 +136,76 @@ data class QuoteLinePreview(
 @Serdeable
 data class IssuedQuote(val id: Long, val number: String, val total: BigDecimal)
 
+// ── plantillas de calculo (GET /api/product-templates/by-product/{id}) ─────
+
+/** Dato que pide la plantilla: ancho, largo, alto… (`code` es la variable de las formulas). */
+@Serdeable
+data class TemplateParam(
+    val code: String,
+    val label: String,
+    @Nullable val unit: String? = null,
+    @Nullable val min: BigDecimal? = null,
+    @Nullable val max: BigDecimal? = null,
+    @Nullable val defaultValue: BigDecimal? = null,
+    @Nullable val required: Boolean? = null,
+)
+
+/** Una eleccion de una opcion de diseño (techo: shingle). `benefit` es el argumento de venta. */
+@Serdeable
+data class TemplateChoice(
+    val code: String,
+    val label: String,
+    @Nullable val renderText: String? = null,
+    @Nullable val benefit: String? = null,
+    @Nullable val isDefault: Boolean? = null,
+)
+
+@Serdeable
+data class TemplateOption(
+    val code: String,
+    val label: String,
+    @Nullable val required: Boolean? = null,
+    val choices: List<TemplateChoice> = emptyList(),
+)
+
+/** Combinacion de elecciones con nombre: basica, recomendada, premium. */
+@Serdeable
+data class TemplatePreset(val code: String, val label: String, val choices: Map<String, String> = emptyMap())
+
+/** Plantilla de calculo de un producto a la medida. Los componentes (materiales y costos) no se leen: son internos. */
+@Serdeable
+data class ProductTemplate(
+    val id: Long,
+    val productId: Long,
+    @Nullable val productName: String? = null,
+    val name: String,
+    @Nullable val description: String? = null,
+    val active: Boolean = true,
+    val params: List<TemplateParam> = emptyList(),
+    val options: List<TemplateOption> = emptyList(),
+    val presets: List<TemplatePreset> = emptyList(),
+)
+
+/** POST /api/quotes/{id}/template-items y PUT …/template-items/{itemId}. */
+@Serdeable
+data class TemplateItemWrite(
+    val templateId: Long,
+    val params: Map<String, BigDecimal>,
+    val choices: Map<String, String>,
+    @Nullable val preset: String?,
+    val quantity: BigDecimal,
+)
+
+/**
+ * Mensajes de IA que el plan de la empresa permite por mes (`GET /api/company/ai-limit`).
+ * `monthlyMessages` nulo = sin limite.
+ */
+@Serdeable
+data class AiLimit(
+    val enabled: Boolean = true,
+    @Nullable val monthlyMessages: Int? = null,
+)
+
 /**
  * Datos de la empresa que el hilo necesita: moneda, impuesto, lista de
  * precios. Se leen al abrir la conversacion y se cachean; no se copian a
@@ -168,8 +238,13 @@ data class ErpQuoteItem(
     @Nullable val dimensionUnit: String? = null,
     val customSize: Boolean = false,
     val showToClient: Boolean = true,
-    /** null · 'calculated' (precio por medida) · 'review' (lo cotiza el asesor). */
+    /** null · 'calculated' (precio por medida) · 'review' (lo cotiza el asesor) · 'template'. */
     @Nullable val sizePricing: String? = null,
+    /** Descripcion de la linea (en una de plantilla: «Pérgola 3 × 4.5 m · Techo: Shingle»). */
+    @Nullable val description: String? = null,
+    /** Plantilla con la que se calculo y su configuracion (JSON con params, choices, preset y renderText). */
+    @Nullable val templateId: Long? = null,
+    @Nullable val templateConfig: String? = null,
 )
 
 /** Cotizacion del ERP (GET/POST/PUT /api/quotes). Solo lo que el agente usa. */

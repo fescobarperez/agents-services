@@ -1,0 +1,23 @@
+# Plantillas de calculo en el agente: ver la plantilla de un producto a la
+# medida y agregarlo calculado. Se conceden a los tipos que ya pueden agregar
+# productos a una cotizacion (mismo modo y auto-aprobacion que esa herramienta).
+databaseChangeLog:
+
+  - changeSet:
+      id: 180-tools-plantillas
+      author: stackline
+      comment: cotizacion.plantilla y cotizacion.agregar_plantilla.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve)
+              SELECT g.agent_id, t.patron, 'read', true
+              FROM ai_agent_tools g,
+                   (VALUES ('cotizacion.plantilla'), ('cotizacion.agregar_plantilla')) AS t(patron)
+              WHERE g.tool_pattern = 'cotizacion.agregar'
+                AND NOT EXISTS (
+                    SELECT 1 FROM ai_agent_tools x WHERE x.agent_id = g.agent_id AND x.tool_pattern = t.patron
+                );
+      rollback:
+        - sql:
+            sql: DELETE FROM ai_agent_tools WHERE tool_pattern IN ('cotizacion.plantilla', 'cotizacion.agregar_plantilla');

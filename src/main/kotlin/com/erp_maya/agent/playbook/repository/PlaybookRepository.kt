@@ -10,15 +10,17 @@ import java.sql.Types
 open class PlaybookRepository(private val jdbc: JdbcOperations) {
 
     /**
-     * El JSON del playbook vigente: el de la empresa si tiene uno, si no el
-     * general del agente (tenant_id nulo). Dentro de cada nivel, la version
-     * mas alta activa.
+     * El JSON del playbook vigente, del mas particular al mas general: el del
+     * agente de la empresa; si no tiene, uno de la empresa para el tipo que
+     * aun no sea de ningun agente (asignaciones antiguas); si no, el general
+     * del tipo (tenant_id nulo). Dentro de cada nivel, la version mas alta activa.
      */
     @ReadOnly
-    open fun vigente(agentCode: String, tenantId: Long): String? =
+    open fun vigente(agentCode: String, tenantId: Long, tenantAgentId: Long? = null): String? =
         jdbc.prepareStatement(SQL) { stmt ->
-            stmt.setString(1, agentCode)
-            stmt.setObject(2, tenantId, Types.BIGINT)
+            stmt.setObject(1, tenantAgentId, Types.BIGINT)
+            stmt.setString(2, agentCode)
+            stmt.setObject(3, tenantId, Types.BIGINT)
             val rs = stmt.executeQuery()
             // prepareStatement no admite resultado nulo: se envuelve en lista.
             listOfNotNull(if (rs.next()) rs.getString(1) else null)
@@ -27,9 +29,10 @@ open class PlaybookRepository(private val jdbc: JdbcOperations) {
     private companion object {
         const val SQL = """
             SELECT config::text FROM agent_playbooks
-            WHERE agent_code = ? AND is_active
-              AND (tenant_id = ? OR tenant_id IS NULL)
-            ORDER BY (tenant_id IS NULL), version DESC
+            WHERE is_active
+              AND (tenant_agent_id = ?::bigint
+                   OR (tenant_agent_id IS NULL AND agent_code = ? AND (tenant_id = ? OR tenant_id IS NULL)))
+            ORDER BY (tenant_agent_id IS NULL), (tenant_id IS NULL), version DESC
             LIMIT 1
         """
     }

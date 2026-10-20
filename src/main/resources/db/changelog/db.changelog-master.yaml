@@ -26,3 +26,17 @@ databaseChangeLog:
       file: db/changelog/changes/10-diseno-aprobado.yaml
   - include:
       file: db/changelog/changes/11-modelos-imagen.yaml
+  - include:
+      file: db/changelog/changes/12-consola-ia.yaml
+  - include:
+      file: db/changelog/changes/13-agentes-empresa.yaml
+  - include:
+      file: db/changelog/changes/14-proveedores-nombre.yaml
+  - include:
+      file: db/changelog/changes/15-canal-web.yaml
+  - include:
+      file: db/changelog/changes/16-uso-costos.yaml
+  - include:
+      file: db/changelog/changes/17-whatsapp-consola.yaml
+  - include:
+      file: db/changelog/changes/18-plantillas-agente.yaml

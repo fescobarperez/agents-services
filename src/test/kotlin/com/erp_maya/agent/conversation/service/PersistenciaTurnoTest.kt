@@ -170,7 +170,7 @@ class PersistenciaTurnoTest {
         const val CORRIDA = """
             SELECT r.* FROM agent_runs r
             JOIN agent_turns t ON t.id = r.turn_id
-            WHERE t.idempotency_key = '%s'
+            WHERE t.idempotency_key = '%s' AND r.kind = 'turn'
         """
 
         const val MENSAJES = """

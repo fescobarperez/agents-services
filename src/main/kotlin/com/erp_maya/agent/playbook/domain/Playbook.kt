@@ -180,6 +180,9 @@ data class Mensajes(
     @JsonProperty("cambios_aplicados") val cambiosAplicados: PlantillaCambios = PlantillaCambios(),
     @JsonProperty("cotizacion_enviada") val cotizacionEnviada: PlantillaEnviada = PlantillaEnviada(),
     val decision: PlantillaDecision = PlantillaDecision(),
+    /** Lo que recibe el cliente cuando la empresa agoto los mensajes de IA de su plan en el mes. */
+    @JsonProperty("limite_ia") val limiteIa: String =
+        "En este momento te atenderá uno de nuestros asesores. En breve te escribe por este medio.",
 )
 
 /**

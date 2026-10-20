@@ -29,6 +29,7 @@ open class ConversationService(
             tenantId = contexto.tenantId,
             externalRef = externalRef,
             agentId = contexto.agent.id,
+            tenantAgentId = contexto.tenantAgent?.id,
         )
 
     /** Reclama la llave de idempotencia; devuelve el turno nuevo o el que ya existia. */

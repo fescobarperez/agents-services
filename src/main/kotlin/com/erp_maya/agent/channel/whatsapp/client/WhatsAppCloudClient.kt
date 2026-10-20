@@ -115,6 +115,37 @@ open class WhatsAppCloudClient(
     }
 
     /**
+     * Datos de un numero en Meta (`GET /{phone_number_id}`), para conectarlo
+     * desde la consola. Solo funciona con numeros de la cuenta de WhatsApp
+     * Business a la que tiene acceso el token de Stackline.
+     *
+     * @throws WhatsAppNumeroException si Meta no lo reconoce (4xx) o no responde.
+     */
+    open fun numero(phoneNumberId: String): WaNumero {
+        if (accessToken.isBlank()) {
+            throw WhatsAppNumeroException(WaNumeroError.SIN_TOKEN, "WHATSAPP_ACCESS_TOKEN no está definida en agents-services")
+        }
+        val peticion = HttpRequest.newBuilder(URI("${graphUrl.trimEnd('/')}/$phoneNumberId?fields=$CAMPOS_NUMERO"))
+            .timeout(Duration.ofSeconds(15))
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "application/json")
+            .GET()
+            .build()
+        val crudo = try {
+            cliente.send(peticion, HttpResponse.BodyHandlers.ofString())
+        } catch (e: Exception) {
+            throw WhatsAppNumeroException(WaNumeroError.SIN_RESPUESTA, "No se pudo contactar a Meta: ${e.javaClass.simpleName}")
+        }
+        if (crudo.statusCode() !in 200..299) {
+            // El mensaje de Meta explica el motivo (id inexistente, sin permiso); el token nunca sale.
+            val motivo = Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(crudo.body().orEmpty())?.groupValues?.get(1)
+            throw WhatsAppNumeroException(WaNumeroError.RECHAZADO, motivo ?: "Meta respondió ${crudo.statusCode()}")
+        }
+        return runCatching { json.readValue(crudo.body(), WaNumero::class.java) }.getOrNull()
+            ?: throw WhatsAppNumeroException(WaNumeroError.SIN_RESPUESTA, "Meta respondió algo que no se pudo leer")
+    }
+
+    /**
      * Baja una foto que mando el cliente. Son dos pasos: `GET /{media_id}`
      * devuelve una URL temporal (dura minutos) y esa URL se baja con el mismo
      * token. Los bytes quedan solo en memoria.
@@ -227,6 +258,19 @@ data class WaSendRequest(
 )
 
 /** El `text` de un mensaje de texto: `{"body": "..."}`. */
+/** Meta no reconocio el numero o no respondio. `tipo`: sin token, rechazado o sin respuesta. */
+class WhatsAppNumeroException(val tipo: String, message: String) : RuntimeException(message)
+
+/** Un numero de WhatsApp Business tal como lo describe Meta. */
+@Serdeable
+data class WaNumero(
+    val id: String,
+    @JsonProperty("display_phone_number") @Nullable val displayPhoneNumber: String? = null,
+    @JsonProperty("verified_name") @Nullable val verifiedName: String? = null,
+    @JsonProperty("quality_rating") @Nullable val qualityRating: String? = null,
+    @JsonProperty("code_verification_status") @Nullable val codeVerificationStatus: String? = null,
+)
+
 @Serdeable
 data class WaSendText(val body: String)
 
@@ -253,6 +297,16 @@ data class WaSendInteractive(
 private const val LARGO_CUERPO = 1024
 private const val LARGO_PIE = 60
 private const val LARGO_PIE_IMAGEN = 1024
+
+/** Lo que se pide de un numero al conectarlo desde la consola. */
+private const val CAMPOS_NUMERO = "display_phone_number,verified_name,quality_rating,code_verification_status"
+
+/** Tipos de [WhatsAppNumeroException]. */
+object WaNumeroError {
+    const val SIN_TOKEN = "SIN_TOKEN"
+    const val RECHAZADO = "RECHAZADO"
+    const val SIN_RESPUESTA = "SIN_RESPUESTA"
+}
 
 @Serdeable
 data class WaSendAction(val buttons: List<WaSendButton>)

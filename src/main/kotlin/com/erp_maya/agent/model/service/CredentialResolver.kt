@@ -15,11 +15,17 @@ import jakarta.inject.Singleton
 @Singleton
 class CredentialResolver(private val environment: Environment) {
 
-    fun secretFor(provider: AiProvider): String {
-        val valor = System.getenv(provider.credentialRef)
+    /** Si la variable esta definida, sin exponer su valor (la consola solo ve si/no). */
+    fun isSet(credentialRef: String): Boolean = !valorDe(credentialRef).isNullOrBlank()
+
+    private fun valorDe(ref: String): String? =
+        System.getenv(ref)
             // Lo que el .env local dejo como propiedad del sistema.
-            ?: System.getProperty(provider.credentialRef)
-            ?: environment.getProperty(provider.credentialRef, String::class.java).orElse(null)
+            ?: System.getProperty(ref)
+            ?: environment.getProperty(ref, String::class.java).orElse(null)
+
+    fun secretFor(provider: AiProvider): String {
+        val valor = valorDe(provider.credentialRef)
 
         if (valor.isNullOrBlank()) {
             // El mensaje nombra la variable que falta, nunca su contenido.

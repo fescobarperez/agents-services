@@ -192,7 +192,7 @@ class AgentLoopTest {
 
     private fun toolsDe(turnId: String): String? {
         val id = turnId.removePrefix("trn_").trimStart('0')
-        return consulta("SELECT tools_called::text FROM agent_runs WHERE turn_id = $id") { it.getString(1) }
+        return consulta("SELECT tools_called::text FROM agent_runs WHERE turn_id = $id AND kind = 'turn'") { it.getString(1) }
     }
 
     private fun unico() = UUID.randomUUID().toString()

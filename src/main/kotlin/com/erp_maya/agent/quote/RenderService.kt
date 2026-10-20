@@ -116,8 +116,13 @@ open class RenderService(private val trabajos: ColaRenders) {
         internal fun instrucciones(f: FichaDiseno, lecturaFoto: String?, ajuste: String?): String = buildString {
             append("Edita esta foto real del cliente para mostrar cómo quedaría su proyecto. Resultado fotorrealista, ")
             append("con la misma luz, perspectiva y escala de la foto.\n")
-            append("Qué agregar: ").append(f.tipo ?: "el proyecto")
-            f.descripcion?.let { append(" — ").append(it) }
+            append("Qué agregar: ")
+            // Cotizado con plantilla: el texto de cada opcion elegida manda.
+            if (f.renderPlantilla != null) append(f.renderPlantilla)
+            else {
+                append(f.tipo ?: "el proyecto")
+                f.descripcion?.let { append(" — ").append(it) }
+            }
             append(".\n")
             f.material?.let { append("Material: ").append(it).append(".\n") }
             f.acabado?.let { append("Acabado/color: ").append(it).append(".\n") }

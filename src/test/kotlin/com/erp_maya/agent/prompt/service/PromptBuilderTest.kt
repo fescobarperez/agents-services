@@ -6,6 +6,7 @@ import com.erp_maya.agent.context.domain.ChannelRef
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.context.domain.ModelRef
 import com.erp_maya.agent.context.domain.PromptRef
+import com.erp_maya.agent.context.domain.TenantAgentRef
 import com.erp_maya.agent.context.domain.TenantPolicy
 import com.erp_maya.agent.context.domain.ToolGrant
 import com.erp_maya.agent.context.domain.ToolMode
@@ -104,6 +105,36 @@ class PromptBuilderTest {
     fun `sin herramientas no se agrega el bloque`() {
         val prompt = builder.build(contexto(conHerramientas = false), SessionState(), emptyList(), "hola")
         assertFalse(prompt.messages.any { it.content.orEmpty().contains("Herramientas disponibles") })
+    }
+
+    @Test
+    fun `el sistema junta identidad, rol del tipo e instrucciones de la empresa en ese orden`() {
+        val ctx = contexto().copy(
+            identity = "Eres Tino, el asistente de Stackline.",
+            tenantAgent = TenantAgentRef(5, "Ventas Web", instructions = "Solo atiendes la tienda en linea."),
+        )
+        val sistema = builder.build(ctx, SessionState(), emptyList(), "hola").messages.first().content.orEmpty()
+        val tino = sistema.indexOf("Eres Tino")
+        val rol = sistema.indexOf("Eres el asistente de ventas")
+        val empresa = sistema.indexOf("Solo atiendes la tienda en linea.")
+        assertTrue(tino in 0 until rol && rol < empresa, sistema)
+    }
+
+    @Test
+    fun `en el chat web se le dice que el visitante es anonimo y como registrarlo`() {
+        val web = contexto().copy(channel = ChannelRef(2, "web", "web:wk_x", Capabilities(buttons = 3, markdown = false, maxChars = 2000)))
+        val sistema = builder.build(web, SessionState(), emptyList(), "hola").messages.first().content.orEmpty()
+        assertTrue(sistema.contains("chat de la pagina web"), sistema)
+        assertTrue(sistema.contains("cotizacion.cliente_nuevo"))
+        val wa = builder.build(contexto(), SessionState(), emptyList(), "hola").messages.first().content.orEmpty()
+        assertFalse(wa.contains("chat de la pagina web"))
+    }
+
+    @Test
+    fun `sin identidad ni instrucciones el sistema empieza con el rol, como antes`() {
+        val sistema = builder.build(contexto(), SessionState(), emptyList(), "hola").messages.first().content.orEmpty()
+        assertTrue(sistema.startsWith("Eres el asistente de ventas de la empresa."))
+        assertFalse(sistema.contains("Instrucciones de la empresa"))
     }
 
     private fun contexto(conHerramientas: Boolean = false) = ExecutionContext(

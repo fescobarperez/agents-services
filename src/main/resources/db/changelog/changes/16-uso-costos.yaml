@@ -1,0 +1,67 @@
+# Uso y costos (consola de plataforma).
+#
+# Cada llamada al modelo queda en agent_runs con su empresa, su canal, su tipo
+# y su costo en USD congelado con los precios vigentes al registrarla: si un
+# precio cambia despues, el historico no se reescribe.
+#
+#   kind = turn     respuesta del agente en un turno
+#          summary  resumen de la conversacion (puede no tener turno: inactividad)
+#          vision   lectura de fotos del cliente
+#
+# Las imagenes de ejemplo (renders) no son llamadas de texto: su costo sigue en
+# render_jobs.cost_usd.
+databaseChangeLog:
+
+  - changeSet:
+      id: 160-agent-runs-uso
+      author: stackline
+      comment: Empresa, canal, tipo y costo de cada llamada al modelo.
+      changes:
+        - addColumn:
+            tableName: agent_runs
+            columns:
+              - column: { name: tenant_id, type: BIGINT }
+              - column: { name: channel, type: VARCHAR(20) }
+              - column: { name: kind, type: VARCHAR(20), defaultValue: turn, constraints: { nullable: false } }
+              - column: { name: cost_usd, type: 'NUMERIC(12,6)', defaultValueNumeric: 0, constraints: { nullable: false } }
+        # Un resumen por inactividad corre fuera de un turno.
+        - dropNotNullConstraint: { tableName: agent_runs, columnName: turn_id, columnDataType: BIGINT }
+        - sql:
+            sql: |
+              ALTER TABLE agent_runs ADD CONSTRAINT ck_agent_runs_kind CHECK (kind IN ('turn', 'summary', 'vision'));
+
+              -- Historico: empresa y canal salen de la conversacion.
+              UPDATE agent_runs r SET tenant_id = cv.tenant_id, channel = ch.kind
+              FROM conversations cv JOIN channels ch ON ch.id = cv.channel_id
+              WHERE cv.id = r.conversation_id AND r.tenant_id IS NULL;
+
+              -- Las lecturas de fotos se registraban con la herramienta vision.lectura.
+              UPDATE agent_runs SET kind = 'vision' WHERE tools_called = '["vision.lectura"]'::jsonb;
+
+              -- Costo del historico con los precios de hoy (antes no se guardaba).
+              UPDATE agent_runs r SET cost_usd = (
+                  GREATEST(r.tokens_in - r.tokens_cached, 0) * m.input_cost_1k
+                  + LEAST(r.tokens_cached, r.tokens_in) * COALESCE(m.cached_cost_1k, m.input_cost_1k)
+                  + r.tokens_out * m.output_cost_1k) / 1000
+              FROM ai_models m WHERE m.id = r.model_id;
+        - createIndex:
+            tableName: agent_runs
+            indexName: ix_agent_runs_tenant_created
+            columns:
+              - column: { name: tenant_id }
+              - column: { name: created_at }
+        - createIndex:
+            tableName: render_jobs
+            indexName: ix_render_jobs_tenant_created
+            columns:
+              - column: { name: tenant_id }
+              - column: { name: created_at }
+      rollback:
+        - dropIndex: { tableName: render_jobs, indexName: ix_render_jobs_tenant_created }
+        - dropIndex: { tableName: agent_runs, indexName: ix_agent_runs_tenant_created }
+        - sql:
+            sql: ALTER TABLE agent_runs DROP CONSTRAINT ck_agent_runs_kind;
+        - dropColumn: { tableName: agent_runs, columnName: cost_usd }
+        - dropColumn: { tableName: agent_runs, columnName: kind }
+        - dropColumn: { tableName: agent_runs, columnName: channel }
+        - dropColumn: { tableName: agent_runs, columnName: tenant_id }

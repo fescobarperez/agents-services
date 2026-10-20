@@ -1,0 +1,176 @@
+# Agentes por empresa (consola de plataforma, fase A).
+#
+# Tres capas que se juntan en el prompt de cada turno:
+#   1. Identidad de Tino (ai_identity → ai_prompt_versions, agent_code '_tino'):
+#      una sola, global. Nace vacia: no cambia nada hasta que se escriba en la consola.
+#   2. Tipo de agente (ai_agents): rol, herramientas que PUEDE usar, modelos por
+#      defecto. Se archiva, no se borra (agent_runs y conversations lo referencian).
+#   3. Agente de empresa (tenant_agents): una instancia del tipo para una empresa.
+#      Puede haber varios del mismo tipo (p. ej. Ventas WhatsApp y Ventas Web) con
+#      su propio modelo, subconjunto de herramientas, instrucciones versionadas,
+#      playbook y canales. Lo nulo hereda del tipo.
+#
+# Migracion sin perdida: cada (empresa, tipo) que hoy atiende un canal recibe su
+# agente de empresa, y sus canales y playbook pasan a apuntarle.
+databaseChangeLog:
+
+  - changeSet:
+      id: 130-identidad-tino
+      author: stackline
+      comment: Identidad global de Tino (prompt versionado en ai_prompt_versions con agent_code '_tino').
+      changes:
+        - createTable:
+            tableName: ai_identity
+            columns:
+              - column: { name: id, type: INT, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: prompt_version_id, type: BIGINT, constraints: { foreignKeyName: fk_ai_identity_prompt, references: 'ai_prompt_versions(id)' } }
+              - column: { name: updated_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: |
+              ALTER TABLE ai_identity ADD CONSTRAINT ck_ai_identity_single CHECK (id = 1);
+              INSERT INTO ai_identity (id, prompt_version_id) VALUES (1, NULL);
+      rollback:
+        - dropTable: { tableName: ai_identity }
+
+  - changeSet:
+      id: 131-tipos-archivables
+      author: stackline
+      comment: Los tipos de agente se archivan en vez de borrarse.
+      changes:
+        - addColumn:
+            tableName: ai_agents
+            columns:
+              - column: { name: archived_at, type: TIMESTAMPTZ }
+      rollback:
+        - dropColumn: { tableName: ai_agents, columnName: archived_at }
+
+  - changeSet:
+      id: 132-tenant-agents
+      author: stackline
+      comment: Agentes de empresa, sus herramientas e instrucciones versionadas.
+      changes:
+        - createTable:
+            tableName: tenant_agents
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: agent_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_tenant_agents_type, references: 'ai_agents(id)' } }
+              - column: { name: name, type: VARCHAR(120), constraints: { nullable: false } }
+              # Nulo = el del tipo.
+              - column: { name: model_id, type: BIGINT, constraints: { foreignKeyName: fk_tenant_agents_model, references: 'ai_models(id)' } }
+              - column: { name: fallback_model_id, type: BIGINT, constraints: { foreignKeyName: fk_tenant_agents_fallback, references: 'ai_models(id)' } }
+              - column: { name: image_model_id, type: BIGINT, constraints: { foreignKeyName: fk_tenant_agents_image, references: 'ai_models(id)' } }
+              - column: { name: temperature, type: 'NUMERIC(3,2)' }
+              # false = todas las herramientas del tipo; true = solo las de tenant_agent_tools (dentro del tipo).
+              - column: { name: tools_override, type: BOOLEAN, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: instructions_version_id, type: BIGINT }
+              - column: { name: is_active, type: BOOLEAN, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: archived_at, type: TIMESTAMPTZ }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex:
+            tableName: tenant_agents
+            indexName: ix_tenant_agents_tenant
+            columns:
+              - column: { name: tenant_id }
+
+        - createTable:
+            tableName: tenant_agent_tools
+            columns:
+              - column: { name: tenant_agent_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_tenant_agent_tools_agent, references: 'tenant_agents(id)', deleteCascade: true } }
+              - column: { name: tool_pattern, type: VARCHAR(120), constraints: { nullable: false } }
+        - addPrimaryKey:
+            tableName: tenant_agent_tools
+            columnNames: tenant_agent_id, tool_pattern
+            constraintName: pk_tenant_agent_tools
+
+        # Inmutable como ai_prompt_versions: una version nunca se edita, se agrega otra.
+        - createTable:
+            tableName: tenant_agent_instructions
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_agent_id, type: BIGINT, constraints: { nullable: false, foreignKeyName: fk_tenant_instr_agent, references: 'tenant_agents(id)' } }
+              - column: { name: version, type: INT, constraints: { nullable: false } }
+              - column: { name: body, type: TEXT, constraints: { nullable: false } }
+              - column: { name: created_by, type: VARCHAR(120) }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addUniqueConstraint:
+            tableName: tenant_agent_instructions
+            columnNames: tenant_agent_id, version
+            constraintName: uq_tenant_instr_version
+        - addForeignKeyConstraint:
+            baseTableName: tenant_agents
+            baseColumnNames: instructions_version_id
+            referencedTableName: tenant_agent_instructions
+            referencedColumnNames: id
+            constraintName: fk_tenant_agents_instructions
+      rollback:
+        - dropForeignKeyConstraint: { baseTableName: tenant_agents, constraintName: fk_tenant_agents_instructions }
+        - dropTable: { tableName: tenant_agent_instructions }
+        - dropTable: { tableName: tenant_agent_tools }
+        - dropTable: { tableName: tenant_agents }
+
+  - changeSet:
+      id: 133-referencias-tenant-agent
+      author: stackline
+      comment: Canales, playbooks, conversaciones y corridas apuntan al agente de empresa.
+      changes:
+        - addColumn:
+            tableName: channel_agents
+            columns:
+              - column: { name: tenant_agent_id, type: BIGINT, constraints: { foreignKeyName: fk_channel_agents_tenant_agent, references: 'tenant_agents(id)' } }
+        - addColumn:
+            tableName: agent_playbooks
+            columns:
+              - column: { name: tenant_agent_id, type: BIGINT, constraints: { foreignKeyName: fk_playbooks_tenant_agent, references: 'tenant_agents(id)' } }
+        - addColumn:
+            tableName: conversations
+            columns:
+              - column: { name: tenant_agent_id, type: BIGINT, constraints: { foreignKeyName: fk_conversations_tenant_agent, references: 'tenant_agents(id)' } }
+        - addColumn:
+            tableName: agent_runs
+            columns:
+              - column: { name: tenant_agent_id, type: BIGINT, constraints: { foreignKeyName: fk_runs_tenant_agent, references: 'tenant_agents(id)' } }
+        - createIndex:
+            tableName: agent_playbooks
+            indexName: ix_playbooks_tenant_agent
+            columns:
+              - column: { name: tenant_agent_id }
+      rollback:
+        - dropIndex: { tableName: agent_playbooks, indexName: ix_playbooks_tenant_agent }
+        - dropColumn: { tableName: agent_runs, columnName: tenant_agent_id }
+        - dropColumn: { tableName: conversations, columnName: tenant_agent_id }
+        - dropColumn: { tableName: agent_playbooks, columnName: tenant_agent_id }
+        - dropColumn: { tableName: channel_agents, columnName: tenant_agent_id }
+
+  - changeSet:
+      id: 134-migrar-a-tenant-agents
+      author: stackline
+      comment: Cada (empresa, tipo) con canal recibe su agente de empresa; canales, playbooks y conversaciones le apuntan.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO tenant_agents (tenant_id, agent_id, name)
+              SELECT DISTINCT ca.tenant_id, ca.agent_id, a.name
+              FROM channel_agents ca
+              JOIN ai_agents a ON a.id = ca.agent_id;
+
+              UPDATE channel_agents ca SET tenant_agent_id = ta.id
+              FROM tenant_agents ta
+              WHERE ta.tenant_id = ca.tenant_id AND ta.agent_id = ca.agent_id;
+
+              UPDATE agent_playbooks pb SET tenant_agent_id = ta.id
+              FROM tenant_agents ta
+              JOIN ai_agents a ON a.id = ta.agent_id
+              WHERE pb.tenant_id = ta.tenant_id AND pb.agent_code = a.code;
+
+              UPDATE conversations c SET tenant_agent_id = ta.id
+              FROM tenant_agents ta
+              WHERE ta.tenant_id = c.tenant_id AND ta.agent_id = c.agent_id;
+      rollback:
+        - sql:
+            sql: |
+              UPDATE conversations SET tenant_agent_id = NULL;
+              UPDATE agent_playbooks SET tenant_agent_id = NULL;
+              UPDATE channel_agents SET tenant_agent_id = NULL;
+              DELETE FROM tenant_agents;

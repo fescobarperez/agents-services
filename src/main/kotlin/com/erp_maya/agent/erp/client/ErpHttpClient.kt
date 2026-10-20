@@ -1,5 +1,8 @@
 package com.erp_maya.agent.erp.client
 
+import com.erp_maya.agent.erp.domain.AiLimit
+import com.erp_maya.agent.erp.domain.ProductTemplate
+import com.erp_maya.agent.erp.domain.TemplateItemWrite
 import com.erp_maya.agent.erp.domain.CompanyInfo
 import com.erp_maya.agent.erp.domain.CustomerSummary
 import com.erp_maya.agent.erp.domain.ErpQuote
@@ -241,6 +244,24 @@ open class ErpHttpClient(
         // Validada: CompanyController → {id, name, nit, plan, status}.
         return uno(HttpRequest.GET<Any>("/api/company"), tenantId, conversationId, CompanyInfo::class.java)
     }
+
+    // ── plantillas de calculo (TemplateController del ERP) ──
+
+    override fun templateByProduct(tenantId: Long, conversationId: Long, productId: Long): ProductTemplate? =
+        // 404 si el producto no tiene plantilla activa → null.
+        uno(HttpRequest.GET<Any>("/api/product-templates/by-product/$productId"), tenantId, conversationId, ProductTemplate::class.java)
+
+    override fun addTemplateItem(tenantId: Long, conversationId: Long, quoteId: Long, item: TemplateItemWrite): ErpQuote =
+        uno(HttpRequest.POST("/api/quotes/$quoteId/template-items", item), tenantId, conversationId, ErpQuote::class.java)
+            ?: throw ErpException("El ERP no devolvió la cotización")
+
+    override fun recalcTemplateItem(tenantId: Long, conversationId: Long, quoteId: Long, itemId: Long, item: TemplateItemWrite): ErpQuote =
+        uno(HttpRequest.PUT("/api/quotes/$quoteId/template-items/$itemId", item), tenantId, conversationId, ErpQuote::class.java)
+            ?: throw ErpException("El ERP no devolvió la cotización")
+
+    override fun aiLimit(tenantId: Long, conversationId: Long): AiLimit? =
+        // AiLimitController del ERP: lo que el plan de la empresa permite por mes.
+        uno(HttpRequest.GET<Any>("/api/company/ai-limit"), tenantId, conversationId, AiLimit::class.java)
 
     // ── borrador de cotizacion (validado contra QuoteController/ClientController) ──
 

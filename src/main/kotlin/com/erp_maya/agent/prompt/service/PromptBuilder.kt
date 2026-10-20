@@ -86,7 +86,15 @@ class PromptBuilder {
     }
 
     private fun sistema(contexto: ExecutionContext): String = buildString {
+        // Tres capas, de lo general a lo particular: quien es Tino (igual en
+        // todas las empresas), el rol del tipo de agente y lo que esta empresa
+        // le pide a este agente. Si algo choca, manda lo mas particular.
+        contexto.identity?.takeIf { it.isNotBlank() }?.let { append(it.trim()).append("\n\n") }
         append(contexto.prompt.body)
+        contexto.tenantAgent?.instructions?.takeIf { it.isNotBlank() }?.let {
+            append("\n\nInstrucciones de la empresa para este agente (prevalecen sobre lo general):\n")
+            append(it.trim())
+        }
         append("\n\nIdioma y formato: responde en ")
         append(contexto.policy.locale)
         contexto.policy.tone?.let { append(", en tono ").append(it) }
@@ -101,6 +109,16 @@ class PromptBuilder {
             append(" Puedes ofrecer hasta ${contexto.channel.capabilities.buttons} opciones para elegir.")
         }
         append(" Limite de ${contexto.channel.capabilities.maxChars} caracteres por mensaje.")
+        if (contexto.channel.kind.equals(CANAL_WEB, ignoreCase = true)) {
+            // En la web no hay numero de telefono que identifique a nadie.
+            append(
+                "\n\nCanal: chat de la pagina web de la empresa. El visitante es anonimo. Atiende sus dudas sin pedirle " +
+                    "datos; cuando quiera una cotizacion o hablar con un asesor, pidele nombre y telefono (y NIT, CF si " +
+                    "no tiene) y registralo con cotizacion.cliente_nuevo mandando el telefono. Si dice que ya es cliente, " +
+                    "buscalo por telefono. Aqui no puedes enviar documentos ni imagenes: si te pide el PDF, dile que un " +
+                    "asesor se lo hara llegar.",
+            )
+        }
         // Los montos los calcula el ERP (impuesto, redondeo, descuentos). Un
         // total que el modelo saca de cabeza termina contradiciendo al PDF.
         append(
@@ -172,6 +190,7 @@ class PromptBuilder {
             append("Las medidas que salen de una foto son estimadas: confirmalas SIEMPRE con el cliente antes de pasarlas a cotizacion.agregar. ")
             append("Si la lectura dice que es un documento personal, no repitas ni pidas sus datos.\n")
         }
+        append("- Productos a la medida (pergolas, decks…): consulta cotizacion.plantilla. Si tiene plantilla, pide las medidas que indica, ofrece los paquetes y las opciones explicando su beneficio (sin decir costos), y cotiza con cotizacion.agregar_plantilla, no con cotizacion.agregar. Si no tiene, sigue como siempre.\n")
         append("- Algo a la medida o con fotos: lleva la ficha de diseño con cotizacion.diseno (tipo, medidas, material, acabado y detalles como aguas o cubierta). Pregunta lo que falte en un solo mensaje.\n")
         if (playbook.imagenes.generarRenders) {
             append("- Imagenes de ejemplo: si el cliente quiere ver como quedaria y mando foto del lugar, completa la ficha ")
@@ -312,5 +331,7 @@ class PromptBuilder {
 
         /** Un aviso del asesor deja de mostrarse al modelo a los 7 dias. */
         const val AVISO_VIGENTE_MS = 7L * 24 * 60 * 60 * 1000
+
+        const val CANAL_WEB = "web"
     }
 }

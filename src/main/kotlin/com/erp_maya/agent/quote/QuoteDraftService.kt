@@ -9,6 +9,10 @@ import com.erp_maya.agent.erp.domain.Dimensions
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.ErpQuote
 import com.erp_maya.agent.erp.domain.ProductSummary
+import com.erp_maya.agent.erp.domain.ProductTemplate
+import com.erp_maya.agent.erp.domain.TemplateItemWrite
+import com.erp_maya.agent.prompt.domain.FichaDiseno
+import io.micronaut.serde.ObjectMapper
 import com.erp_maya.agent.erp.domain.QuoteLineWrite
 import com.erp_maya.agent.erp.domain.ChangeRequestWrite
 import com.erp_maya.agent.playbook.domain.Playbook
@@ -46,6 +50,9 @@ data class DraftStep(
  */
 @Singleton
 open class QuoteDraftService(private val erp: ErpClient) {
+
+    /** Solo para leer la configuracion de las lineas de plantilla. */
+    private val json: ObjectMapper by lazy { ObjectMapper.getDefault() }
 
     /** Agrega un producto por id (herramienta) o por SKU (boton del panel). */
     open fun agregar(
@@ -205,15 +212,174 @@ open class QuoteDraftService(private val erp: ErpClient) {
         val quoteId = borrador.quoteId ?: throw ErpException("La cotización aún no se ha creado")
         val vigente = erp.getQuote(contexto.tenantId, conversationId, quoteId)
             ?: throw ErpException("La cotización ${borrador.quoteNumber} ya no existe en el ERP")
-        if (vigente.items.none { it.id == lineId }) throw ErpException("La línea $lineId no es de esta cotización")
+        val linea = vigente.items.firstOrNull { it.id == lineId } ?: throw ErpException("La línea $lineId no es de esta cotización")
+        // Linea de plantilla: se recalcula en el ERP para que su materia prima siga a la cantidad.
+        if (linea.templateId != null && cantidad.signum() > 0) {
+            val cfg = configPlantilla(linea.templateConfig)
+            val cotizacion = erp.recalcTemplateItem(
+                contexto.tenantId, conversationId, quoteId, lineId,
+                TemplateItemWrite(linea.templateId, cfg.params, cfg.choices, cfg.preset, cantidad),
+            )
+            return listo(borrador, cotizacion, "Actualicé la cotización ${cotizacion.docNumber}.")
+        }
 
         val lineas = vigente.items.mapNotNull { i ->
             val q = if (i.id == lineId) cantidad else i.quantity
-            if (q.signum() <= 0) null else conservar(i.id, i.productName, q, i.unitPrice, i.discount)
+            if (q.signum() <= 0) null else conservar(i.id, i.description ?: i.productName, q, i.unitPrice, i.discount)
         }
         if (lineas.isEmpty()) throw ErpException("La cotización debe conservar al menos una línea")
         val cotizacion = erp.updateQuoteLines(contexto.tenantId, conversationId, vigente, lineas)
         return listo(borrador, cotizacion, "Actualicé la cotización ${cotizacion.docNumber}.")
+    }
+
+    // ── plantillas de calculo ───────────────────────────────────────────────
+
+    /**
+     * Lo que pide la plantilla del producto: medidas (params), opciones de
+     * diseño con su argumento de venta y paquetes (basica, recomendada…). Sin
+     * costos: son internos. Sin plantilla, el producto se cotiza con agregar.
+     */
+    open fun plantilla(contexto: ExecutionContext, conversationId: Long, actual: QuoteDraft?, productId: Long): DraftStep {
+        val p = erp.templateByProduct(contexto.tenantId, conversationId, productId)
+            ?: return DraftStep(
+                borrador = actual,
+                mensaje = "Ese producto no tiene plantilla de cálculo; cotízalo con cotizacion.agregar.",
+                datos = mapOf("plantilla" to false),
+            )
+        return DraftStep(
+            borrador = actual,
+            mensaje = "Plantilla de ${p.productName ?: p.name}.",
+            datos = vistaPlantilla(p),
+        )
+    }
+
+    /**
+     * Agrega el producto calculado con su plantilla: el ERP saca la materia
+     * prima y el precio; aqui solo se mandan medidas, elecciones y paquete.
+     * Necesita cliente (la linea vive en la cotizacion, no en espera).
+     */
+    open fun agregarPlantilla(
+        contexto: ExecutionContext,
+        conversationId: Long,
+        conversationRef: String,
+        actual: QuoteDraft?,
+        productId: Long,
+        params: Map<String, BigDecimal>,
+        choices: Map<String, String>,
+        preset: String?,
+        cantidad: BigDecimal,
+        playbook: Playbook = Playbook(),
+    ): DraftStep {
+        require(cantidad.signum() > 0) { "La cantidad debe ser mayor que cero" }
+        val t = contexto.tenantId
+        val borrador = actual ?: QuoteDraft()
+        if (borrador.quoteId == null && borrador.ultimaCerradaId != null) {
+            throw ErpException(
+                "No hay cotización abierta: la ${borrador.ultimaCerrada} ya no se edita. Usa cotizacion.reabrir o " +
+                    "cotizacion.solicitar_cambio con quoteId ${borrador.ultimaCerradaId}, o cotizacion.nueva si es otra compra.",
+            )
+        }
+        if (borrador.customerId == null) {
+            throw ErpException("Para cotizar con plantilla primero identifica al cliente (cotizacion.cliente o cotizacion.cliente_nuevo).")
+        }
+        val p = erp.templateByProduct(t, conversationId, productId)
+            ?: throw ErpException("Ese producto no tiene plantilla de cálculo; cotízalo con cotizacion.agregar.")
+        params.values.forEach { require(it.signum() > 0) { "Las medidas deben ser mayores que cero" } }
+        val medidas = Dimensions.de(params["alto"], params["ancho"], params["profundidad"])
+        DisenoService.validarAgregar(borrador, medidas)
+        val linea = TemplateItemWrite(p.id, params, choices, preset?.takeIf { it.isNotBlank() }, cantidad)
+
+        val cotizacion = if (borrador.quoteId == null) {
+            // El ERP no crea una cotizacion vacia: nace con el producto como linea
+            // provisional (y lo que estaba en espera), se agrega la de plantilla y
+            // la provisional se quita.
+            val producto = resolverProducto(t, conversationId, productId, null)
+                ?: throw ErpException("No encontré el producto $productId en el catálogo")
+            val creada = crear(contexto, conversationId, conversationRef, borrador, borrador.pendientes + DraftLine(
+                producto.id, producto.sku, producto.name, BigDecimal.ONE, producto.unitPrice, producto.unit, null,
+            ))
+            val provisional = creada.items.lastOrNull { it.productId == producto.id && it.templateId == null }?.id
+            val conPlantilla = erp.addTemplateItem(t, conversationId, creada.id, linea)
+            val lineas = conPlantilla.items.filter { it.id != provisional }
+                .map { conservar(it.id, it.description ?: it.productName, it.quantity, it.unitPrice, it.discount) }
+            erp.updateQuoteLines(t, conversationId, conPlantilla, lineas)
+        } else {
+            val vigente = erp.getQuote(t, conversationId, borrador.quoteId)
+                ?: throw ErpException("La cotización ${borrador.quoteNumber} ya no existe en el ERP")
+            playbook.limites.lineasMaximas?.let { tope ->
+                if (vigente.items.size + 1 > tope) {
+                    throw ErpException("La cotización llegó al máximo de $tope líneas; un agente de ventas debe atender el resto")
+                }
+            }
+            erp.addTemplateItem(t, conversationId, vigente.id, linea)
+        }
+
+        // La ficha de diseño queda con lo cotizado: el render dibuja exactamente eso.
+        val nueva = cotizacion.items.lastOrNull { it.templateId == p.id }
+        val etiquetas = p.options.mapNotNull { o ->
+            val elegida = choices[o.code] ?: p.presets.firstOrNull { it.code == preset }?.choices?.get(o.code)
+                ?: o.choices.firstOrNull { it.isDefault == true }?.code
+            o.choices.firstOrNull { it.code == elegida }?.let { o.label to it.label }
+        }.toMap()
+        val ficha = (borrador.diseno ?: FichaDiseno()).let { f ->
+            f.copy(
+                tipo = p.productName ?: f.tipo,
+                medidas = medidas ?: f.medidas,
+                // Las medidas de la plantilla las dio el cliente (las de una foto sin confirmar ya se rechazaron arriba).
+                medidasConfirmadas = if (medidas != null) true else f.medidasConfirmadas,
+                origenMedidas = if (medidas != null) FichaDiseno.ORIGEN_CLIENTE else f.origenMedidas,
+                detalles = f.detalles + etiquetas,
+                productoId = p.productId,
+                productoNombre = p.productName ?: f.productoNombre,
+                renderPlantilla = configPlantilla(nueva?.templateConfig).renderText ?: f.renderPlantilla,
+            )
+        }
+        val descripcion = nueva?.description ?: p.productName ?: p.name
+        log.info("linea de plantilla {} en {} desde {}", p.id, cotizacion.docNumber, conversationRef)
+        return listo(borrador.copy(diseno = ficha), cotizacion, "Agregué $descripcion a la cotización ${cotizacion.docNumber}.")
+    }
+
+    private fun vistaPlantilla(p: ProductTemplate): Map<String, Any?> = mapOf(
+        "plantilla" to true,
+        "productId" to p.productId,
+        "producto" to (p.productName ?: p.name),
+        "medidas" to p.params.map { x ->
+            mapOf(
+                "code" to x.code, "label" to x.label, "unit" to x.unit, "min" to x.min, "max" to x.max,
+                "default" to x.defaultValue, "required" to (x.required ?: false),
+            )
+        },
+        "opciones" to p.options.map { o ->
+            mapOf(
+                "code" to o.code, "label" to o.label, "required" to (o.required ?: false),
+                "choices" to o.choices.map { c ->
+                    mapOf("code" to c.code, "label" to c.label, "beneficio" to c.benefit, "default" to (c.isDefault ?: false))
+                },
+            )
+        },
+        "paquetes" to p.presets.map { mapOf("code" to it.code, "label" to it.label, "choices" to it.choices) },
+    )
+
+    /** La configuracion guardada en la linea: {version, params, choices, preset, renderText}. */
+    private data class ConfigPlantilla(
+        val params: Map<String, BigDecimal> = emptyMap(),
+        val choices: Map<String, String> = emptyMap(),
+        val preset: String? = null,
+        val renderText: String? = null,
+    )
+
+    private fun configPlantilla(raw: String?): ConfigPlantilla {
+        if (raw.isNullOrBlank()) return ConfigPlantilla()
+        @Suppress("UNCHECKED_CAST")
+        val m = runCatching { json.readValue(raw, Map::class.java) as? Map<String, Any?> }.getOrNull() ?: return ConfigPlantilla()
+        val params = (m["params"] as? Map<*, *>).orEmpty().mapNotNull { (k, v) ->
+            val n = (v as? Number)?.let { BigDecimal(it.toString()) } ?: (v as? String)?.toBigDecimalOrNull()
+            if (k == null || n == null) null else k.toString() to n
+        }.toMap()
+        val choices = (m["choices"] as? Map<*, *>).orEmpty().mapNotNull { (k, v) ->
+            if (k == null || v == null) null else k.toString() to v.toString()
+        }.toMap()
+        return ConfigPlantilla(params, choices, m["preset"]?.toString(), m["renderText"]?.toString())
     }
 
     /** El cliente quiere otra cotizacion: se suelta la actual y se conserva el cliente. */
@@ -596,7 +762,7 @@ open class QuoteDraftService(private val erp: ErpClient) {
         }
         val actuales = vigente.items.map { i ->
             val q = if (i.id == existente?.id) i.quantity + cantidad else i.quantity
-            conservar(i.id, i.productName, q, i.unitPrice, i.discount)
+            conservar(i.id, i.description ?: i.productName, q, i.unitPrice, i.discount)
         }
         return if (existente != null) actuales
         else actuales + QuoteLineWrite(
@@ -642,7 +808,7 @@ open class QuoteDraftService(private val erp: ErpClient) {
         else listOf(previas, (listOf(ENCABEZADO_NOTAS) + lineasDatos).joinToString("\n"))
             .filter { it.isNotBlank() }.joinToString("\n\n")
         if (notas == cotizacion.notes && direccion == cotizacion.deliveryAddress) return cotizacion
-        val lineas = cotizacion.items.map { conservar(it.id, it.productName, it.quantity, it.unitPrice, it.discount) }
+        val lineas = cotizacion.items.map { conservar(it.id, it.description ?: it.productName, it.quantity, it.unitPrice, it.discount) }
         return erp.updateQuoteLines(
             contexto.tenantId, conversationId, cotizacion.copy(notes = notas, deliveryAddress = direccion), lineas,
         )

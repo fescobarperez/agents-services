@@ -1,0 +1,23 @@
+# Consola · fase B: los proveedores se gestionan desde la consola y necesitan
+# un nombre para mostrar. La llave sigue fuera de la base (credential_ref es el
+# NOMBRE de la variable).
+databaseChangeLog:
+
+  - changeSet:
+      id: 140-providers-name
+      author: stackline
+      comment: Nombre visible del proveedor.
+      changes:
+        - addColumn:
+            tableName: ai_providers
+            columns:
+              - column: { name: name, type: VARCHAR(80) }
+        - sql:
+            sql: |
+              UPDATE ai_providers SET name = CASE code
+                  WHEN 'openai' THEN 'OpenAI'
+                  WHEN 'anthropic' THEN 'Anthropic'
+                  ELSE initcap(code) END
+              WHERE name IS NULL;
+      rollback:
+        - dropColumn: { tableName: ai_providers, columnName: name }

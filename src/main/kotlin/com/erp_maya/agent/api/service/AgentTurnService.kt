@@ -16,6 +16,7 @@ import com.erp_maya.agent.conversation.domain.TurnInProgressException
 import com.erp_maya.agent.conversation.domain.TurnStatus
 import com.erp_maya.agent.conversation.service.ConversationService
 import com.erp_maya.agent.model.repository.AgentRunRepository
+import com.erp_maya.agent.playbook.domain.Playbook
 import com.erp_maya.agent.playbook.service.PlaybookService
 import com.erp_maya.agent.tools.service.ConfirmationDetector
 import com.erp_maya.agent.prompt.domain.FotoCliente
@@ -24,6 +25,7 @@ import com.erp_maya.agent.prompt.service.PromptBuilder
 import com.erp_maya.agent.summary.service.ConversationSummarizer
 import com.erp_maya.agent.quote.PanelActionService
 import com.erp_maya.agent.quote.QuoteDraftService
+import com.erp_maya.agent.usage.AiQuotaService
 import com.erp_maya.agent.vision.service.LectorImagenes
 import io.micronaut.serde.ObjectMapper
 import jakarta.inject.Singleton
@@ -49,6 +51,7 @@ open class AgentTurnService(
     private val borradores: QuoteDraftService,
     private val playbooks: PlaybookService,
     private val lector: LectorImagenes,
+    private val cuota: AiQuotaService,
 ) {
 
     /**
@@ -89,7 +92,10 @@ open class AgentTurnService(
 
         return try {
             if (request.input.esAccion) {
+                // Los botones del panel no llaman al modelo: no gastan mensajes de IA.
                 ejecutarAccion(request, contexto, conversacion.id, turno.id)
+            } else if (cuota.agotado(contexto.tenantId, conversacion.id)) {
+                limiteAlcanzado(contexto, conversacion.id, turno.id)
             } else {
                 ejecutar(request, contexto, conversacion.id, turno.id)
             }
@@ -110,7 +116,7 @@ open class AgentTurnService(
         // El resumen se refresca ANTES de armar el prompt: asi el turno actual
         // ya lo aprovecha y, sobre todo, se reescribe mientras los mensajes
         // viejos siguen dentro de la ventana en vez de despues de perderlos.
-        val resumido = resumidor.refrescarSiHaceFalta(conversationId, leerEstado(conversationId))
+        val resumido = resumidor.refrescarSiHaceFalta(conversationId, leerEstado(conversationId), turnId)
         // WhatsApp: quien escribe se identifica por su numero (el external_id
         // de la conversacion). Va antes del prompt para que el modelo ya sepa
         // con quien habla y no le pregunte.
@@ -142,6 +148,8 @@ open class AgentTurnService(
                         toolsCalledJson = json.writeValueAsString(listOf(HERRAMIENTA_LECTURA)),
                         latencyMs = c.latencyMs,
                         fallbackUsed = c.fallbackUsed,
+                        tenantAgentId = contexto.tenantAgent?.id,
+                        kind = AgentRunRepository.KIND_VISION,
                     )
                 }
             }
@@ -198,6 +206,7 @@ open class AgentTurnService(
                 ?.let { json.writeValueAsString(it) },
             latencyMs = salida.latencyMs,
             fallbackUsed = salida.fallbackUsed,
+            tenantAgentId = contexto.tenantAgent?.id,
         )
 
         val texto = recortar(salida.text, capacidades.maxChars)
@@ -240,6 +249,30 @@ open class AgentTurnService(
             salida.usage.input, salida.usage.output, salida.latencyMs,
             salida.escalation?.let { " ESCALADO: $it" } ?: "",
         )
+        return respuesta
+    }
+
+    /**
+     * La empresa agoto los mensajes de IA de su plan este mes: se responde un
+     * aviso fijo sin llamar al modelo (no cuesta) y el turno queda escalado,
+     * asi que tampoco cuenta como mensaje. Al cliente se le dice que lo atiende
+     * un asesor; a quien usa el asistente del ERP, el motivo.
+     */
+    private fun limiteAlcanzado(contexto: ExecutionContext, conversationId: Long, turnId: Long): TurnResponse {
+        val estado = leerEstado(conversationId)
+        val playbook = playbooks.para(contexto)
+        val interno = contexto.channel.kind == CANAL_ERP || playbook.audiencia(contexto.channel.kind) == Playbook.AUDIENCIA_VENDEDOR
+        val texto = if (interno) AVISO_LIMITE_INTERNO else playbook.mensajes.limiteIa
+        val respuesta = TurnResponse(
+            conversationId = idConversacion(conversationId),
+            turnId = AgentTurn.publicId(turnId),
+            events = listOf(AgentEvent.Text(texto)),
+            state = TurnState(summaryVersion = estado.summaryVersion),
+        )
+        conversaciones.registrarSaliente(conversationId, turnId, texto)
+        conversaciones.completar(turnId, json.writeValueAsString(respuesta))
+        conversaciones.fallar(turnId, TurnStatus.ESCALATED, ESCALADO_LIMITE)
+        log.info("turno tenant={} conversation={} turn={} sin modelo: limite de IA del plan", contexto.tenantId, respuesta.conversationId, respuesta.turnId)
         return respuesta
     }
 
@@ -340,6 +373,10 @@ open class AgentTurnService(
         const val LIMITE_RAFAGA = 10
 
         const val CANAL_WHATSAPP = "whatsapp"
+        const val CANAL_ERP = "erp"
+        const val ESCALADO_LIMITE = "AI_LIMIT"
+        const val AVISO_LIMITE_INTERNO =
+            "La empresa ya usó los mensajes de IA de su plan este mes. Para seguir usando el asistente, contacta a Stackline."
 
         /** Como queda la lectura de fotos en `agent_runs.tools_called`. */
         const val HERRAMIENTA_LECTURA = "vision.lectura"

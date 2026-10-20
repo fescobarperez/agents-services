@@ -24,9 +24,27 @@ data class ExecutionContext(
     val policy: TenantPolicy,
     /** Modelo que edita imagenes (renders). Nulo = el agente no genera renders. */
     val imageModel: ModelRef? = null,
+    /**
+     * El agente de la empresa que atiende el canal (tenant_agents). Nulo solo
+     * en asignaciones antiguas sin agente de empresa: entonces todo sale del tipo.
+     */
+    val tenantAgent: TenantAgentRef? = null,
+    /** Identidad global de Tino (ai_identity). Nula mientras no se escriba. */
+    val identity: String? = null,
 ) {
-    /** Permiso vigente para una herramienta, o null si el agente no la tiene. */
-    fun toolFor(name: String): ToolGrant? = tools.firstOrNull { it.matches(name) }
+    /**
+     * Permiso vigente para una herramienta, o null si el agente no la tiene.
+     * El tipo pone el techo (y el modo, auto-aprobacion y tope); el agente de
+     * la empresa solo puede quitar herramientas, nunca agregar.
+     */
+    fun toolFor(name: String): ToolGrant? {
+        val permitidas = tenantAgent?.allowedTools
+        if (permitidas != null && permitidas.none { cubre(it, name) }) return null
+        return tools.firstOrNull { it.matches(name) }
+    }
+
+    private fun cubre(patron: String, nombre: String): Boolean =
+        if (patron.endsWith(".*")) nombre.startsWith(patron.dropLast(1)) else patron == nombre
 
     /**
      * Tope efectivo de una escritura: el menor entre el limite de la empresa y
@@ -81,6 +99,21 @@ data class ModelRef(
 
 @Serdeable
 data class PromptRef(val id: Long, val version: Int, val body: String)
+
+/**
+ * El agente de una empresa: instancia de un tipo con su nombre, sus
+ * instrucciones y, si las restringe, las herramientas que conserva.
+ */
+@Serdeable
+data class TenantAgentRef(
+    val id: Long,
+    val name: String,
+    /** Instrucciones vigentes de la empresa para este agente; nulo = ninguna. */
+    val instructions: String? = null,
+    val instructionsVersionId: Long? = null,
+    /** Nulo = todas las del tipo; si no, solo estas (dentro del tipo). */
+    val allowedTools: List<String>? = null,
+)
 
 enum class ToolMode { READ, WRITE }
 

@@ -6,6 +6,7 @@ import com.erp_maya.agent.context.domain.ChannelRef
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.context.domain.ModelRef
 import com.erp_maya.agent.context.domain.PromptRef
+import com.erp_maya.agent.context.domain.TenantAgentRef
 import com.erp_maya.agent.context.domain.TenantPolicy
 import com.erp_maya.agent.context.domain.ToolGrant
 import com.erp_maya.agent.context.domain.ToolMode
@@ -53,8 +54,26 @@ open class ExecutionContextRepository(
         if (parciales.isEmpty()) return parciales
 
         val porAgente = parciales.map { it.agent.id }.distinct().associateWith { herramientas(it) }
-        return parciales.map { it.copy(tools = porAgente[it.agent.id].orEmpty()) }
+        return parciales.map { c ->
+            val ta = c.tenantAgent
+            c.copy(
+                tools = porAgente[c.agent.id].orEmpty(),
+                // Con tools_override la empresa conserva solo las suyas; el
+                // techo (modo, tope, auto-aprobacion) sigue siendo el del tipo.
+                tenantAgent = ta?.let { if (it.allowedTools != null) it.copy(allowedTools = herramientasEmpresa(it.id)) else it },
+            )
+        }
     }
+
+    @ReadOnly
+    open fun herramientasEmpresa(tenantAgentId: Long): List<String> =
+        jdbc.prepareStatement(SQL_TENANT_TOOLS) { stmt ->
+            stmt.setLong(1, tenantAgentId)
+            val rs = stmt.executeQuery()
+            val filas = mutableListOf<String>()
+            while (rs.next()) filas += rs.getString(1)
+            filas
+        }
 
     @ReadOnly
     open fun herramientas(agentId: Long): List<ToolGrant> =
@@ -126,6 +145,17 @@ open class ExecutionContextRepository(
             body = rs.getString("prompt_body"),
         ),
         tools = emptyList(),
+        tenantAgent = rs.getObject("tenant_agent_id")?.let {
+            TenantAgentRef(
+                id = rs.getLong("tenant_agent_id"),
+                name = rs.getString("tenant_agent_name"),
+                instructions = rs.getString("instructions_body"),
+                instructionsVersionId = rs.getObject("instructions_version_id")?.let { rs.getLong("instructions_version_id") },
+                // Marca: se reemplaza por la lista real despues de agotar el ResultSet.
+                allowedTools = if (rs.getBoolean("tools_override")) emptyList() else null,
+            )
+        },
+        identity = rs.getString("identity_body"),
         policy = TenantPolicy(
             tenantId = rs.getLong("tenant_id"),
             // Sin fila en agent_tenant_policies el bot queda apagado: dar de
@@ -160,7 +190,14 @@ open class ExecutionContextRepository(
                    c.capabilities::text AS capabilities,
                    a.id            AS agent_id,
                    a.code          AS agent_code,
-                   a.temperature, a.max_tool_loops, a.response_timeout_ms,
+                   coalesce(ta.temperature, a.temperature) AS temperature,
+                   a.max_tool_loops, a.response_timeout_ms,
+                   ta.id           AS tenant_agent_id,
+                   ta.name         AS tenant_agent_name,
+                   coalesce(ta.tools_override, false) AS tools_override,
+                   ti.id           AS instructions_version_id,
+                   ti.body         AS instructions_body,
+                   ipv.body        AS identity_body,
                    m.id            AS model_id,
                    p.code          AS provider_code,
                    m.model_name, m.context_window, m.supports_tools, m.supports_cache, m.supports_vision,
@@ -186,17 +223,28 @@ open class ExecutionContextRepository(
                   AND now() >= ca.valid_from
                   AND now() < coalesce(ca.valid_to, 'infinity'::timestamptz)
                   AND (?::bigint IS NULL OR ca.tenant_id = ?::bigint)
-            JOIN ai_agents a          ON a.id = ca.agent_id AND a.is_active
-            JOIN ai_models m          ON m.id = a.model_id AND m.is_active
+            -- El agente de la empresa (si la asignacion lo tiene) manda sobre el
+            -- tipo: lo nulo hereda. Uno apagado o archivado no atiende.
+            LEFT JOIN tenant_agents ta ON ta.id = ca.tenant_agent_id
+            JOIN ai_agents a          ON a.id = coalesce(ta.agent_id, ca.agent_id) AND a.is_active AND a.archived_at IS NULL
+            JOIN ai_models m          ON m.id = coalesce(ta.model_id, a.model_id) AND m.is_active
             JOIN ai_providers p       ON p.id = m.provider_id AND p.is_active
-            LEFT JOIN ai_models fm    ON fm.id = a.fallback_model_id
+            LEFT JOIN ai_models fm    ON fm.id = coalesce(ta.fallback_model_id, a.fallback_model_id)
             LEFT JOIN ai_providers fp ON fp.id = fm.provider_id
-            LEFT JOIN ai_models im    ON im.id = a.image_model_id AND im.is_active
+            LEFT JOIN ai_models im    ON im.id = coalesce(ta.image_model_id, a.image_model_id) AND im.is_active
             LEFT JOIN ai_providers ip ON ip.id = im.provider_id AND ip.is_active
             JOIN ai_prompt_versions pv ON pv.id = a.prompt_version_id
+            LEFT JOIN tenant_agent_instructions ti ON ti.id = ta.instructions_version_id
+            LEFT JOIN ai_identity idn ON idn.id = 1
+            LEFT JOIN ai_prompt_versions ipv ON ipv.id = idn.prompt_version_id
             LEFT JOIN agent_tenant_policies pol ON pol.tenant_id = ca.tenant_id
             WHERE c.account_ref = ? AND c.is_active
+              AND (ca.tenant_agent_id IS NULL OR (ta.is_active AND ta.archived_at IS NULL))
             ORDER BY ca.priority DESC, ca.valid_from DESC
+        """
+
+        const val SQL_TENANT_TOOLS = """
+            SELECT tool_pattern FROM tenant_agent_tools WHERE tenant_agent_id = ? ORDER BY tool_pattern
         """
 
         const val SQL_TOOLS = """

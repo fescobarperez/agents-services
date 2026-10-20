@@ -20,12 +20,13 @@ import java.sql.ResultSet
 open class ConversationRepository(private val jdbc: JdbcOperations) {
 
     @Transactional
-    open fun findOrCreate(channelId: Long, tenantId: Long, externalRef: String, agentId: Long): Conversation =
+    open fun findOrCreate(channelId: Long, tenantId: Long, externalRef: String, agentId: Long, tenantAgentId: Long? = null): Conversation =
         jdbc.prepareStatement(SQL_UPSERT) { stmt ->
             stmt.setLong(1, channelId)
             stmt.setLong(2, tenantId)
             stmt.setString(3, externalRef)
             stmt.setLong(4, agentId)
+            stmt.setObject(5, tenantAgentId, java.sql.Types.BIGINT)
             val rs = stmt.executeQuery()
             check(rs.next()) { "El upsert de conversacion no devolvio fila" }
             leer(rs)
@@ -235,10 +236,13 @@ open class ConversationRepository(private val jdbc: JdbcOperations) {
          * y obligaria a una segunda consulta.
          */
         const val SQL_UPSERT = """
-            INSERT INTO conversations (channel_id, tenant_id, external_ref, agent_id)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO conversations (channel_id, tenant_id, external_ref, agent_id, tenant_agent_id)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT (channel_id, external_ref)
-            DO UPDATE SET updated_at = now()
+            -- Si el canal pasa a otro agente de la empresa, la conversacion sigue
+            -- con el que la atiende ahora (y sus corridas se le cargan a ese).
+            DO UPDATE SET updated_at = now(),
+                          tenant_agent_id = coalesce(EXCLUDED.tenant_agent_id, conversations.tenant_agent_id)
             RETURNING id, channel_id, tenant_id, external_ref, agent_id, created_at
         """
 

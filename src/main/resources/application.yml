@@ -49,6 +49,12 @@ agent:
         - cotizaciones.read
         # El ERP avisa al cliente cuando el vendedor aplica sus solicitudes.
         - notificaciones.write
+    # Consola de plataforma (via stack-line-services): administra modelos y
+    # agentes en /v1/admin/ai. Solo el scope admin; no atiende turnos.
+    platform-admin:
+      api-key: ${AGENT_KEY_PLATFORM:}
+      scopes:
+        - admin
 
   # Resumen de la conversacion. El disparador normal es la inactividad; en
   # conversaciones largas y continuas hay ademas un respaldo dentro del turno
@@ -82,6 +88,25 @@ whatsapp:
   # decide el modelo con la herramienta `tino.sticker`; esto solo los apaga.
   stickers:
     enabled: ${WHATSAPP_STICKERS_ENABLED:true}
+
+# Canal web: widget de chat en la pagina de la empresa (/v1/web). Es publico:
+# lo protegen el dominio de cada widget (se configura en la consola) y estos
+# limites por minuto. `public-url` es la direccion publica de este servicio;
+# con ella la consola arma el <script> que pega la empresa.
+web:
+  public-url: ${AGENT_PUBLIC_URL:}
+  # Detras del proxy la IP real viene en X-Forwarded-For.
+  trust-forwarded: ${WEB_TRUST_FORWARDED:true}
+  # Lo que puede hacer el agente en la web (sin api-key: la llamada no sale del proceso).
+  scopes:
+    - productos.read
+    - clientes.read
+    - cotizaciones.read
+    - cotizaciones.write
+  rate:
+    session-per-minute: 10
+    ip-per-minute: 30
+    widget-per-minute: 120
 
 # Servicio externo. Las rutas concretas aun no estan validadas contra
 # maya-erp-services: van marcadas con TODO en ErpClient.

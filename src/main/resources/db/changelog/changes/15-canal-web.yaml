@@ -1,0 +1,53 @@
+# Fase C: canal web (widget de chat en la pagina de la empresa).
+#
+# Cada widget es un canal (`channels.kind = 'web'`, `account_ref = 'web:{llave}'`)
+# con su fila en `web_widgets`: de que empresa es, su llave publica (no es un
+# secreto: viaja en el HTML del cliente), los dominios desde donde se acepta y
+# lo que el widget muestra (titulo, saludo, color). El agente que lo atiende se
+# asigna como cualquier canal, en channel_agents.
+databaseChangeLog:
+
+  - changeSet:
+      id: 150-channels-kind-web
+      author: stackline
+      comment: El tipo de canal admite 'web'.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE channels DROP CONSTRAINT ck_channels_kind;
+              ALTER TABLE channels ADD CONSTRAINT ck_channels_kind CHECK (kind IN ('whatsapp', 'erp', 'api', 'web'));
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE channels DROP CONSTRAINT ck_channels_kind;
+              ALTER TABLE channels ADD CONSTRAINT ck_channels_kind CHECK (kind IN ('whatsapp', 'erp', 'api'));
+
+  - changeSet:
+      id: 151-web-widgets
+      author: stackline
+      comment: Widgets de chat web por empresa.
+      changes:
+        - createTable:
+            tableName: web_widgets
+            columns:
+              - column:
+                  name: channel_id
+                  type: BIGINT
+                  constraints: { primaryKey: true, nullable: false, foreignKeyName: fk_web_widgets_channel, references: 'channels(id)', deleteCascade: true }
+              - column: { name: tenant_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: name, type: VARCHAR(80), constraints: { nullable: false } }
+              - column: { name: public_key, type: VARCHAR(40), constraints: { nullable: false, unique: true, uniqueConstraintName: uq_web_widgets_key } }
+              # Lista JSON de origenes (https://www.ejemplo.com, https://*.ejemplo.com).
+              - column: { name: allowed_origins, type: JSONB, defaultValueComputed: "'[]'::jsonb", constraints: { nullable: false } }
+              - column: { name: title, type: VARCHAR(60) }
+              - column: { name: greeting, type: VARCHAR(300) }
+              - column: { name: color, type: VARCHAR(7) }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex:
+            tableName: web_widgets
+            indexName: ix_web_widgets_tenant
+            columns:
+              - column: { name: tenant_id }
+      rollback:
+        - dropTable: { tableName: web_widgets }

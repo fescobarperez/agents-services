@@ -60,11 +60,37 @@ class ToolCatalog {
         ToolDefinition(
             name = "cotizacion.cliente_nuevo",
             mode = ToolMode.READ,
-            description = "Registra como cliente a quien escribe (su numero se toma de la conversacion) y lo fija " +
-                "en la cotizacion. Solo si el cliente no esta identificado. Si el NIT ya existe, usa ese cliente.",
+            description = "Registra como cliente a quien escribe y lo fija en la cotizacion. Solo si el cliente no " +
+                "esta identificado. En WhatsApp su numero se toma de la conversacion; en el chat web pidelo y mandalo " +
+                "en telefono. Si el NIT ya existe, usa ese cliente.",
             parameters = listOf(
                 ToolParameter("nombre", "string", true, "Nombre completo o razon social"),
                 ToolParameter("nit", "string", false, "NIT; CF si no tiene"),
+                ToolParameter("telefono", "string", false, "Telefono de contacto (solo chat web; en WhatsApp se ignora)"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.plantilla",
+            mode = ToolMode.READ,
+            description = "Muestra la plantilla de calculo de un producto a la medida (pergola, deck…): que medidas " +
+                "pide, las opciones de diseño con su beneficio y los paquetes (basica, recomendada, premium). Usala " +
+                "antes de cotizar algo a la medida; si el producto no tiene plantilla, usa cotizacion.agregar.",
+            parameters = listOf(
+                ToolParameter("productId", "integer", true, "Id del producto (de productos.search)"),
+            ),
+        ),
+        ToolDefinition(
+            name = "cotizacion.agregar_plantilla",
+            mode = ToolMode.READ,
+            description = "Agrega a la cotizacion un producto calculado con su plantilla: el sistema calcula materiales " +
+                "y precio con las medidas y opciones que eligio el cliente. Necesita cliente identificado. Usa los " +
+                "code de cotizacion.plantilla. Las opciones que no mandes toman las del paquete o las de por defecto.",
+            parameters = listOf(
+                ToolParameter("productId", "integer", true, "Id del producto (el de cotizacion.plantilla)"),
+                ToolParameter("medidas", "string", true, "Medidas por code, p. ej. 'ancho=3; largo=4.5; alto=2.5' (en la unidad de cada una)"),
+                ToolParameter("opciones", "string", false, "Elecciones por code de opcion, p. ej. 'techo=shingle; cielo=regletas'"),
+                ToolParameter("paquete", "string", false, "Code del paquete elegido (p. ej. recomendada)"),
+                ToolParameter("cantidad", "number", false, "Cuantas unidades iguales (por defecto 1)"),
             ),
         ),
         ToolDefinition(
@@ -288,6 +314,9 @@ class ToolCatalog {
     private val porNombre = todas.associateBy { it.name }
 
     fun byName(name: String): ToolDefinition? = porNombre[name]
+
+    /** Todas las herramientas que el codigo sabe ejecutar (la consola elige cuales concede). */
+    fun all(): List<ToolDefinition> = todas
 
     /** Los esquemas que se le declaran al proveedor del modelo. */
     fun schemasFor(contexto: ExecutionContext): List<ToolSchema> =

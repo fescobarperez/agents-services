@@ -177,6 +177,66 @@ class ExecutionContextResolverTest {
         assertEquals(911L, resolver.resolve("wa:compartido", 911L).tenantId)
     }
 
+    @Test
+    fun `el agente de la empresa hereda del tipo y solo cambia lo suyo`() {
+        // Ventas Web de la empresa 920: otro modelo, solo buscar productos y sus instrucciones.
+        ejecutar(
+            """
+            INSERT INTO channels (kind, account_ref, capabilities) VALUES ('api', 'web:920', '{"buttons":0}');
+            INSERT INTO agent_tenant_policies (tenant_id, is_enabled) VALUES (920, true);
+            INSERT INTO tenant_agents (tenant_id, agent_id, name, model_id, tools_override)
+            SELECT 920, a.id, 'Ventas Web', m.id, true FROM ai_agents a, ai_models m
+            WHERE a.code = 'ventas' AND m.model_name = 'gpt-4o-mini';
+            INSERT INTO tenant_agent_tools (tenant_agent_id, tool_pattern)
+            SELECT id, 'productos.search' FROM tenant_agents WHERE tenant_id = 920;
+            INSERT INTO tenant_agent_instructions (tenant_agent_id, version, body)
+            SELECT id, 1, 'Solo atiendes la tienda en linea.' FROM tenant_agents WHERE tenant_id = 920;
+            UPDATE tenant_agents ta SET instructions_version_id = ti.id
+            FROM tenant_agent_instructions ti WHERE ti.tenant_agent_id = ta.id AND ta.tenant_id = 920;
+            INSERT INTO channel_agents (channel_id, tenant_id, agent_id, tenant_agent_id, priority)
+            SELECT c.id, 920, ta.agent_id, ta.id, 10 FROM channels c, tenant_agents ta
+            WHERE c.account_ref = 'web:920' AND ta.tenant_id = 920;
+            """,
+        )
+        creados += """
+            DELETE FROM channel_agents WHERE tenant_id = 920;
+            UPDATE tenant_agents SET instructions_version_id = NULL WHERE tenant_id = 920;
+            DELETE FROM tenant_agent_instructions WHERE tenant_agent_id IN (SELECT id FROM tenant_agents WHERE tenant_id = 920);
+            DELETE FROM tenant_agent_tools WHERE tenant_agent_id IN (SELECT id FROM tenant_agents WHERE tenant_id = 920);
+            DELETE FROM tenant_agents WHERE tenant_id = 920;
+            DELETE FROM agent_tenant_policies WHERE tenant_id = 920;
+            DELETE FROM channels WHERE account_ref = 'web:920';
+        """
+
+        val ctx = resolver.resolve("web:920", null)
+        assertEquals("ventas", ctx.agent.code)
+        assertEquals("Ventas Web", ctx.tenantAgent?.name)
+        assertEquals("gpt-4o-mini", ctx.model.modelName)
+        assertEquals("Solo atiendes la tienda en linea.", ctx.tenantAgent?.instructions)
+        assertTrue(ctx.toolFor("productos.search") != null)
+        // El tipo puede emitir; este agente no.
+        assertEquals(null, ctx.toolFor("cotizaciones.issue"))
+    }
+
+    @Test
+    fun `un agente de empresa archivado no atiende`() {
+        ejecutar(
+            """
+            INSERT INTO channels (kind, account_ref, capabilities) VALUES ('api', 'web:921', '{}');
+            INSERT INTO agent_tenant_policies (tenant_id, is_enabled) VALUES (921, true);
+            INSERT INTO tenant_agents (tenant_id, agent_id, name, archived_at)
+            SELECT 921, id, 'Archivado', now() FROM ai_agents WHERE code = 'ventas';
+            INSERT INTO channel_agents (channel_id, tenant_id, agent_id, tenant_agent_id, priority)
+            SELECT c.id, 921, ta.agent_id, ta.id, 10 FROM channels c, tenant_agents ta
+            WHERE c.account_ref = 'web:921' AND ta.tenant_id = 921;
+            """,
+        )
+        creados += "DELETE FROM channel_agents WHERE tenant_id = 921; DELETE FROM tenant_agents WHERE tenant_id = 921; DELETE FROM agent_tenant_policies WHERE tenant_id = 921; DELETE FROM channels WHERE account_ref = 'web:921';"
+
+        val e = assertThrows(AgentUnavailableException::class.java) { resolver.resolve("web:921", null) }
+        assertEquals(AgentUnavailableException.Reason.NO_ACTIVE_AGENT, e.reason)
+    }
+
     private fun ejecutar(sql: String) {
         dataSourceResolver.resolve(dataSource).connection.use { con ->
             con.createStatement().use { it.execute(sql) }

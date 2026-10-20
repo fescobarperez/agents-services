@@ -8,6 +8,7 @@ import com.erp_maya.agent.model.domain.ModelOptions
 import com.erp_maya.agent.model.domain.ModelPrompt
 import com.erp_maya.agent.model.domain.PromptMessage
 import com.erp_maya.agent.model.domain.Role
+import com.erp_maya.agent.model.repository.AgentRunRepository
 import com.erp_maya.agent.model.service.ModelRouter
 import com.erp_maya.agent.prompt.domain.SessionState
 import com.erp_maya.agent.prompt.service.PromptBuilder
@@ -42,6 +43,7 @@ open class ConversationSummarizer(
     private val conversaciones: ConversationService,
     private val router: ModelRouter,
     private val json: ObjectMapper,
+    private val corridas: AgentRunRepository,
 ) {
 
     /**
@@ -52,10 +54,10 @@ open class ConversationSummarizer(
      * ligero esta caido, el turno sigue con el resumen anterior; tumbar la
      * conversacion por eso seria cambiar una degradacion por una caida.
      */
-    open fun refrescarSiHaceFalta(conversationId: Long, estado: SessionState): SessionState {
+    open fun refrescarSiHaceFalta(conversationId: Long, estado: SessionState, turnId: Long? = null): SessionState {
         val pendientes = conversaciones.posteriores(conversationId, estado.summarizedThrough, MAX_POR_RESUMEN)
         if (pendientes.size < UMBRAL_RESPALDO) return estado
-        return resumir(conversationId, estado, pendientes) ?: estado
+        return resumir(conversationId, estado, pendientes, turnId) ?: estado
     }
 
     /**
@@ -81,9 +83,9 @@ open class ConversationSummarizer(
         return true
     }
 
-    private fun resumir(conversationId: Long, estado: SessionState, pendientes: List<StoredMessage>): SessionState? =
+    private fun resumir(conversationId: Long, estado: SessionState, pendientes: List<StoredMessage>, turnId: Long? = null): SessionState? =
         try {
-            reescribir(estado, pendientes)?.let { resumen ->
+            reescribir(conversationId, turnId, estado, pendientes)?.let { resumen ->
                 val nuevo = estado.copy(
                     summary = resumen,
                     summaryVersion = estado.summaryVersion + 1,
@@ -101,7 +103,7 @@ open class ConversationSummarizer(
             null
         }
 
-    private fun reescribir(estado: SessionState, pendientes: List<StoredMessage>): String? {
+    private fun reescribir(conversationId: Long, turnId: Long?, estado: SessionState, pendientes: List<StoredMessage>): String? {
         val agente = agentes.byCode(CODIGO_AGENTE)
         if (agente == null) {
             // Sin agente de resumen no se improvisa con el de ventas: ese lleva
@@ -132,6 +134,21 @@ open class ConversationSummarizer(
             opciones = ModelOptions(agente.temperature, agente.responseTimeoutMs),
             prompt = prompt,
         )
+        // Cuesta aunque no cuente como mensaje de IA: entra en uso y costos.
+        runCatching {
+            corridas.record(
+                turnId = turnId,
+                conversationId = conversationId,
+                agentId = agente.id,
+                modelId = salida.model.id,
+                promptVersionId = agente.prompt.id,
+                usage = salida.completion.usage,
+                toolsCalledJson = null,
+                latencyMs = salida.latencyMs,
+                fallbackUsed = salida.fallbackUsed,
+                kind = AgentRunRepository.KIND_SUMMARY,
+            )
+        }.onFailure { log.warn("no se pudo registrar la corrida del resumen de {}: {}", conversationId, it.message) }
         return salida.completion.text?.takeIf { it.isNotBlank() }
     }
 

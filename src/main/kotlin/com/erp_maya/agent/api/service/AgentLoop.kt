@@ -273,7 +273,8 @@ open class AgentLoop(
                     contexto, conversationId, ref, actual,
                     nombre = call.stringArg("nombre") ?: throw IllegalArgumentException("Falta nombre"),
                     nit = call.stringArg("nit"),
-                    telefono = telefono,
+                    // WhatsApp: el numero de la conversacion manda. Web: el que dio el visitante.
+                    telefono = telefono ?: call.stringArg("telefono")?.trim()?.takeIf { it.isNotEmpty() },
                 )
                 "cotizacion.diseno" -> disenos.actualizar(
                     actual,
@@ -297,6 +298,22 @@ open class AgentLoop(
                     contexto, conversationId, actual, playbook, fotos, telefono,
                     fotoNumero = call.longArg("foto")?.toInt(),
                     ajuste = call.stringArg("ajuste"),
+                )
+                "cotizacion.plantilla" -> cotizaciones.plantilla(
+                    contexto, conversationId, actual,
+                    call.longArg("productId") ?: throw IllegalArgumentException("Falta productId"),
+                )
+                "cotizacion.agregar_plantilla" -> cotizaciones.agregarPlantilla(
+                    contexto, conversationId, ref, actual,
+                    productId = call.longArg("productId") ?: throw IllegalArgumentException("Falta productId"),
+                    params = pares(call.stringArg("medidas")).mapValues { (k, v) ->
+                        v.replace(',', '.').toBigDecimalOrNull()
+                            ?: throw IllegalArgumentException("La medida '$k' debe ser un número (p. ej. ancho=3.5)")
+                    },
+                    choices = pares(call.stringArg("opciones")),
+                    preset = call.stringArg("paquete"),
+                    cantidad = call.decimalArg("cantidad") ?: BigDecimal.ONE,
+                    playbook = playbook,
                 )
                 "cotizacion.agregar" -> cotizaciones.agregar(
                     contexto, conversationId, ref, actual,
@@ -449,6 +466,13 @@ open class AgentLoop(
     companion object {
         const val TOOL_PREVIEW = "cotizaciones.preview"
         const val PREFIJO_BORRADOR = "cotizacion."
+
+        /** 'ancho=3; largo=4.5' → mapa. Claves en minusculas; lo vacio se ignora. */
+        fun pares(texto: String?): Map<String, String> =
+            texto.orEmpty().split(';', '\n').mapNotNull { parte ->
+                val i = parte.indexOf('=')
+                if (i <= 0) null else parte.substring(0, i).trim().lowercase() to parte.substring(i + 1).trim()
+            }.filter { it.first.isNotEmpty() && it.second.isNotEmpty() }.toMap()
         const val TOOL_EMITIR = "cotizaciones.issue"
 
         const val MENSAJE_ESCALAMIENTO =

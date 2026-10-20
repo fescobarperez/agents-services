@@ -32,6 +32,9 @@ open class ModelRouter(proveedores: List<ModelProvider>) {
 
     private val porCodigo: Map<String, ModelProvider> = proveedores.associateBy { it.providerCode }
 
+    /** Codigos de proveedor con implementacion: solo estos se pueden dar de alta en la consola. */
+    open fun codes(): Set<String> = porCodigo.keys
+
     init {
         log.info("Proveedores de modelo registrados: {}", porCodigo.keys.joinToString())
     }

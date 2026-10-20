@@ -1,0 +1,27 @@
+# Conectar numeros de WhatsApp desde la consola.
+#
+# Un canal de WhatsApp (`wa:{phone_number_id}`) ahora puede pertenecer a una
+# empresa aunque todavia no lo atienda ningun agente (`tenant_id`), y guarda el
+# nombre que muestra la consola (`label`: numero visible y nombre verificado en
+# Meta). Los canales sembrados a mano siguen funcionando sin estos datos.
+databaseChangeLog:
+
+  - changeSet:
+      id: 170-channels-empresa-y-nombre
+      author: stackline
+      comment: Empresa duena y nombre visible del canal.
+      changes:
+        - addColumn:
+            tableName: channels
+            columns:
+              - column: { name: tenant_id, type: BIGINT }
+              - column: { name: label, type: VARCHAR(160) }
+        - createIndex:
+            tableName: channels
+            indexName: ix_channels_tenant
+            columns:
+              - column: { name: tenant_id }
+      rollback:
+        - dropIndex: { tableName: channels, indexName: ix_channels_tenant }
+        - dropColumn: { tableName: channels, columnName: label }
+        - dropColumn: { tableName: channels, columnName: tenant_id }

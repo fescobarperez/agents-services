@@ -54,6 +54,29 @@ class ToolGrantTest {
         assertNull(ctx.toolFor("nomina.read"))
     }
 
+    @Test
+    fun `el agente de la empresa solo puede quitar herramientas del tipo`() {
+        val tipo = contexto(quoteLimit = null, toolMax = "10000").copy(
+            tools = listOf(
+                ToolGrant("productos.*", ToolMode.READ, true, null),
+                ToolGrant("cotizaciones.issue", ToolMode.WRITE, false, BigDecimal("10000")),
+            ),
+        )
+        // Sin restriccion: todo lo del tipo.
+        val todas = tipo.copy(tenantAgent = TenantAgentRef(7, "Ventas WhatsApp"))
+        assertEquals("cotizaciones.issue", todas.toolFor("cotizaciones.issue")?.pattern)
+
+        // Ventas web: solo busca productos; emitir queda fuera aunque el tipo lo permita.
+        val web = tipo.copy(tenantAgent = TenantAgentRef(8, "Ventas Web", allowedTools = listOf("productos.search")))
+        assertEquals("productos.*", web.toolFor("productos.search")?.pattern)
+        assertNull(web.toolFor("productos.stock"))
+        assertNull(web.toolFor("cotizaciones.issue"))
+
+        // Pedir algo que el tipo no tiene no lo concede: el tipo es el techo.
+        val fuera = tipo.copy(tenantAgent = TenantAgentRef(9, "X", allowedTools = listOf("nomina.read")))
+        assertNull(fuera.toolFor("nomina.read"))
+    }
+
     private fun contexto(quoteLimit: String?, toolMax: String?) = ExecutionContext(
         tenantId = 1,
         channel = ChannelRef(1, "whatsapp", "wa:x", Capabilities()),

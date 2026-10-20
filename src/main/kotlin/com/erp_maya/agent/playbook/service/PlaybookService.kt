@@ -27,18 +27,22 @@ open class PlaybookService(
 
     private val cache = ConcurrentHashMap<String, Entrada>()
 
+    /** Tras guardar un playbook desde la consola: el siguiente turno lo lee de la base. */
+    open fun invalidar() = cache.clear()
+
     open fun para(contexto: ExecutionContext): Playbook {
-        val clave = "${contexto.agent.code}/${contexto.tenantId}"
+        val agenteEmpresa = contexto.tenantAgent?.id
+        val clave = "${contexto.agent.code}/${contexto.tenantId}/${agenteEmpresa ?: "-"}"
         val ahora = Instant.now()
         cache[clave]?.takeIf { it.vence.isAfter(ahora) }?.let { return it.playbook }
 
-        val playbook = cargar(contexto.agent.code, contexto.tenantId)
+        val playbook = cargar(contexto.agent.code, contexto.tenantId, agenteEmpresa)
         cache[clave] = Entrada(playbook, ahora.plus(VIGENCIA))
         return playbook
     }
 
-    private fun cargar(agentCode: String, tenantId: Long): Playbook {
-        val crudo = runCatching { repositorio.vigente(agentCode, tenantId) }
+    private fun cargar(agentCode: String, tenantId: Long, tenantAgentId: Long?): Playbook {
+        val crudo = runCatching { repositorio.vigente(agentCode, tenantId, tenantAgentId) }
             .onFailure { log.error("no se pudo leer el playbook de {} / empresa {}", agentCode, tenantId, it) }
             .getOrNull()
             ?: return Playbook().also { log.warn("sin playbook para {} / empresa {}: se usa el de por defecto", agentCode, tenantId) }

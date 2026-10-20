@@ -1,0 +1,48 @@
+# Consola de plataforma · Modelos y agentes (API de administracion /v1/admin/ai).
+# - ai_models.cached_cost_1k: precio de los tokens leidos de cache (USD/1k).
+#   Nulo = el proveedor no lo distingue y se cobran como entrada normal.
+# - ai_agents.name / kind / description: como se ve el agente en la consola.
+#   kind: conversational (atiende canales) | internal (lo invoca el codigo).
+databaseChangeLog:
+
+  - changeSet:
+      id: 120-models-cached-cost
+      author: stackline
+      comment: Precio de tokens cacheados por modelo.
+      changes:
+        - addColumn:
+            tableName: ai_models
+            columns:
+              - column: { name: cached_cost_1k, type: 'NUMERIC(10,6)' }
+      rollback:
+        - dropColumn: { tableName: ai_models, columnName: cached_cost_1k }
+
+  - changeSet:
+      id: 121-agents-display
+      author: stackline
+      comment: Nombre, tipo y descripcion de cada agente para la consola.
+      changes:
+        - addColumn:
+            tableName: ai_agents
+            columns:
+              - column: { name: name, type: VARCHAR(120) }
+              - column: { name: kind, type: VARCHAR(20), defaultValue: conversational, constraints: { nullable: false } }
+              - column: { name: description, type: VARCHAR(500) }
+        - sql:
+            sql: |
+              UPDATE ai_agents SET name = 'Ventas (Tino)', kind = 'conversational',
+                     description = 'Atiende a los clientes por WhatsApp y en el ERP: busca productos, arma y envia cotizaciones.'
+              WHERE code = 'ventas';
+              UPDATE ai_agents SET name = 'Resumen de conversacion', kind = 'internal',
+                     description = 'Resume las conversaciones inactivas o largas para no perder contexto.'
+              WHERE code = 'resumen';
+              UPDATE ai_agents SET name = code WHERE name IS NULL;
+        - addNotNullConstraint: { tableName: ai_agents, columnName: name, columnDataType: VARCHAR(120) }
+        - sql:
+            sql: ALTER TABLE ai_agents ADD CONSTRAINT ck_ai_agents_kind CHECK (kind IN ('conversational', 'internal'))
+      rollback:
+        - sql:
+            sql: ALTER TABLE ai_agents DROP CONSTRAINT IF EXISTS ck_ai_agents_kind
+        - dropColumn: { tableName: ai_agents, columnName: description }
+        - dropColumn: { tableName: ai_agents, columnName: kind }
+        - dropColumn: { tableName: ai_agents, columnName: name }

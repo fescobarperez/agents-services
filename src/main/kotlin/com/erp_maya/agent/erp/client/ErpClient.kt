@@ -1,5 +1,8 @@
 package com.erp_maya.agent.erp.client
 
+import com.erp_maya.agent.erp.domain.AiLimit
+import com.erp_maya.agent.erp.domain.ProductTemplate
+import com.erp_maya.agent.erp.domain.TemplateItemWrite
 import com.erp_maya.agent.erp.domain.CompanyInfo
 import com.erp_maya.agent.erp.domain.CustomerSummary
 import com.erp_maya.agent.erp.domain.ErpException
@@ -59,6 +62,21 @@ interface ErpClient {
     ): IssuedQuote
 
     fun getCompany(tenantId: Long, conversationId: Long): CompanyInfo?
+
+    /** Plantilla de calculo activa del producto; null si no tiene. */
+    fun templateByProduct(tenantId: Long, conversationId: Long, productId: Long): ProductTemplate? =
+        throw ErpException("templateByProduct no implementado")
+
+    /** Agrega a la cotizacion una linea calculada con plantilla (el ERP desglosa su materia prima). */
+    fun addTemplateItem(tenantId: Long, conversationId: Long, quoteId: Long, item: TemplateItemWrite): ErpQuote =
+        throw ErpException("addTemplateItem no implementado")
+
+    /** Recalcula una linea de plantilla (otra medida, opciones o cantidad). */
+    fun recalcTemplateItem(tenantId: Long, conversationId: Long, quoteId: Long, itemId: Long, item: TemplateItemWrite): ErpQuote =
+        throw ErpException("recalcTemplateItem no implementado")
+
+    /** Limite mensual de mensajes de IA del plan; nulo si no se pudo leer (no se corta). */
+    fun aiLimit(tenantId: Long, conversationId: Long): AiLimit? = null
 
     // ── Borrador de cotizacion (asistente) ──────────────────────────────────
     // Con cuerpo por defecto para que los dobles de prueba existentes sigan
