@@ -34,12 +34,48 @@ jobs:
           # suplantarlo y recibir la clave.
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
+      # El build de Kotlin tarda varios minutos. Si se corre dentro de la
+      # sesión SSH, un corte de la conexión ("client_loop: send disconnect:
+      # Broken pipe") hace fallar el job aunque el servidor siga trabajando.
+      # Por eso deploy.sh se lanza desacoplado (nohup) y aquí solo se va
+      # leyendo su log hasta que deja el código de salida en un archivo.
       - name: Desplegar
+        env:
+          DESTINO: ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}
         run: |
-          ssh -i ~/.ssh/deploy_key \
-              -o BatchMode=yes \
-              "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-              "~/stackline/stack-line-services/deploy/deploy.sh agents"
+          remoto() {
+            ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=20 \
+                -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$DESTINO" "$@"
+          }
+          LOG='~/stackline/deploy-agents.log'
+          FIN='~/stackline/deploy-agents.exit'
+
+          remoto "rm -f $FIN; nohup bash -c \"~/stackline/stack-line-services/deploy/deploy.sh agents; echo \\\$? > $FIN\" > $LOG 2>&1 < /dev/null &"
+
+          leidas=0
+          for _ in $(seq 1 110); do   # ~27 min, dentro del timeout del job
+            sleep 15
+            if ! salida=$(remoto "tail -n +$((leidas + 1)) $LOG; echo '@@FIN@@'; cat $FIN 2>/dev/null || true"); then
+              echo "  (sin conexión con el servidor; se reintenta)"
+              continue
+            fi
+            log="${salida%@@FIN@@*}"
+            codigo=$(printf '%s' "${salida##*@@FIN@@}" | tr -d '[:space:]')
+            if [ -n "$codigo" ]; then
+              printf '%s\n' "$log"
+              exit "$codigo"
+            fi
+            # Solo líneas completas: la última puede estar a medio escribir.
+            case "$log" in
+              *$'\n') ;;
+              *$'\n'*) log="${log%$'\n'*}"$'\n' ;;
+              *) log='' ;;
+            esac
+            printf '%s' "$log"
+            leidas=$((leidas + $(printf '%s' "$log" | wc -l)))
+          done
+          echo "El despliegue no terminó a tiempo; revisa $LOG en el servidor."
+          exit 1
 
       - name: Limpiar
         if: always()

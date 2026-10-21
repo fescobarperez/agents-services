@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ── Compilación ───────────────────────────────────────────────────────
 # Mismo esquema que stack-line-services: dependencias en una capa aparte del
 # código, para que cambiar una clase no vuelva a bajar todo Maven Central.
@@ -13,12 +14,18 @@ WORKDIR /src
 # proceso en vez de levantar un daemon aparte.
 ENV GRADLE_FLAGS="--no-daemon -Dorg.gradle.jvmargs=-Xmx1g -Pkotlin.compiler.execution.strategy=in-process"
 
+# La caché de Gradle (~/.gradle) va en un montaje de BuildKit que sobrevive
+# entre despliegues: si Docker descarta la capa de dependencias (prune, cambio
+# en build.gradle.kts) no se vuelve a bajar todo. El reporte de `dependencies`
+# va a /dev/null: es el árbol completo y solo llenaba el log del despliegue.
 COPY gradlew gradle.properties settings.gradle.kts build.gradle.kts ./
 COPY gradle gradle
-RUN chmod +x gradlew && ./gradlew $GRADLE_FLAGS dependencies --quiet || true
+RUN --mount=type=cache,id=gradle-agents,target=/root/.gradle \
+    chmod +x gradlew && ./gradlew $GRADLE_FLAGS dependencies > /dev/null || true
 
 COPY src src
-RUN ./gradlew $GRADLE_FLAGS shadowJar --quiet
+RUN --mount=type=cache,id=gradle-agents,target=/root/.gradle \
+    ./gradlew $GRADLE_FLAGS shadowJar --quiet
 
 # ── Ejecución ─────────────────────────────────────────────────────────
 FROM eclipse-temurin:25-jre
