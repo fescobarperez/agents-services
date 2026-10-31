@@ -8,6 +8,9 @@ import com.erp_maya.agent.api.service.AgentTurnService
 import com.erp_maya.agent.context.domain.AgentUnavailableException
 import com.erp_maya.agent.context.domain.Capabilities
 import com.erp_maya.agent.context.service.ExecutionContextResolver
+import com.erp_maya.agent.erp.client.ErpClient
+import com.erp_maya.agent.erp.domain.ErpException
+import com.erp_maya.agent.erp.domain.LeadWrite
 import com.erp_maya.agent.conversation.domain.TurnInProgressException
 import io.micronaut.context.annotation.Value
 import jakarta.inject.Singleton
@@ -26,6 +29,7 @@ open class WebChatService(
     private val widgets: WebWidgetRepository,
     private val turnos: AgentTurnService,
     private val resolver: ExecutionContextResolver,
+    private val erp: ErpClient,
     @param:Value("\${web.scopes:productos.read,clientes.read,cotizaciones.read,cotizaciones.write}") private val scopes: List<String>,
     @param:Value("\${web.rate.session-per-minute:10}") private val porSesion: Int,
     @param:Value("\${web.rate.ip-per-minute:30}") private val porIp: Int,
@@ -82,6 +86,53 @@ open class WebChatService(
         return WebRenderer.render(respuesta.events, capacidades)
     }
 
+    /**
+     * Formulario de contacto de la pagina de la empresa. Usa la misma llave y
+     * los mismos dominios que el chat; el prospecto queda en el ERP de la
+     * empresa del widget (nunca la que diga el navegador) y el ERP avisa por correo.
+     */
+    open fun contacto(llave: String, origin: String?, ip: String, form: WebContactIn): WebContactAck {
+        val w = widget(llave, origin)
+        // Un bot que llena el campo oculto recibe "ok" y no se guarda nada:
+        // si le dijeramos que fallo, cambiaria de estrategia.
+        if (!form.website.isNullOrBlank()) {
+            log.info("formulario de contacto descartado (trampa) widget={} ip={}", llave, ip)
+            return WebContactAck(true)
+        }
+        listOf("c:ip:$ip" to CONTACTO_POR_IP, "c:w:$llave" to CONTACTO_POR_WIDGET).forEach { (k, max) ->
+            val espera = limites.intentar(k, max)
+            if (espera > 0) throw WebException(429, "RATE_LIMIT", "Demasiados envíos. Intenta de nuevo en $espera s.", espera)
+        }
+        val nombre = form.name?.trim().orEmpty()
+        val correo = form.email?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val telefono = form.phone?.trim()?.takeIf { it.isNotEmpty() }
+        val mensaje = form.message?.trim().orEmpty()
+        if (nombre.isEmpty() || nombre.length > 150) throw WebException(400, "NAME", "Escribe tu nombre")
+        if (correo == null && telefono == null) throw WebException(400, "CONTACT", "Déjanos un correo o un teléfono")
+        if (correo != null && (correo.length > 150 || !CORREO.matches(correo))) throw WebException(400, "EMAIL", "El correo no es válido")
+        if (telefono != null && !TELEFONO.matches(telefono)) throw WebException(400, "PHONE", "El teléfono no es válido")
+        if (mensaje.isEmpty()) throw WebException(400, "MESSAGE", "Escribe tu mensaje")
+        if (mensaje.length > LARGO_MAXIMO) throw WebException(400, "TOO_LONG", "Máximo $LARGO_MAXIMO caracteres")
+
+        val prospecto = LeadWrite(
+            name = nombre,
+            companyName = form.company?.trim()?.takeIf { it.isNotEmpty() }?.take(150),
+            phone = telefono,
+            email = correo,
+            interest = form.interest?.trim()?.takeIf { it.isNotEmpty() }?.take(80),
+            message = mensaje,
+            wantsDemo = false,
+            source = "web_form",
+        )
+        try {
+            erp.createLead(w.tenantId, 0L, prospecto)
+        } catch (e: ErpException) {
+            log.error("no se pudo registrar el contacto del widget {}: {}", llave, e.message)
+            throw WebException(502, "UNAVAILABLE", "No pudimos enviar tu mensaje. Intenta de nuevo en un momento.")
+        }
+        return WebContactAck(true)
+    }
+
     private fun widget(llave: String, origin: String?): WebWidget {
         if (!LLAVE.matches(llave)) throw WebException(404, "NOT_FOUND", "Widget no encontrado")
         val w = widgets.porLlave(llave) ?: throw WebException(404, "NOT_FOUND", "Widget no encontrado")
@@ -104,6 +155,12 @@ open class WebChatService(
 
         val LLAVE = Regex("^wk_[A-Za-z0-9]{20,40}$")
         val ID = Regex("^[A-Za-z0-9_-]{16,64}$")
+        val CORREO = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+        val TELEFONO = Regex("^[+0-9 ()-]{7,25}$")
+
+        /** Envios del formulario por minuto: una persona manda uno; mas que esto es abuso. */
+        const val CONTACTO_POR_IP = 3
+        const val CONTACTO_POR_WIDGET = 30
 
         fun cuenta(llave: String) = "web:$llave"
 

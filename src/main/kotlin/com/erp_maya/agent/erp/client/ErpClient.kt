@@ -5,6 +5,8 @@ import com.erp_maya.agent.erp.domain.ProductTemplate
 import com.erp_maya.agent.erp.domain.TemplateItemWrite
 import com.erp_maya.agent.erp.domain.CompanyInfo
 import com.erp_maya.agent.erp.domain.CustomerSummary
+import com.erp_maya.agent.erp.domain.LeadAck
+import com.erp_maya.agent.erp.domain.LeadWrite
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.ErpQuote
 import com.erp_maya.agent.erp.domain.ErpChangeRequest
@@ -81,6 +83,10 @@ interface ErpClient {
     // ── Borrador de cotizacion (asistente) ──────────────────────────────────
     // Con cuerpo por defecto para que los dobles de prueba existentes sigan
     // compilando; la implementacion real esta en ErpHttpClient.
+
+    /** Registra (o actualiza, por conversacion) un prospecto para que ventas lo contacte. */
+    fun createLead(tenantId: Long, conversationId: Long, lead: LeadWrite): LeadAck =
+        throw ErpException("createLead no implementado")
 
     fun searchCustomers(tenantId: Long, conversationId: Long, query: String, limit: Int = 5): List<CustomerSummary> =
         throw ErpException("searchCustomers no implementado")

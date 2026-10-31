@@ -285,6 +285,24 @@ class ToolCatalog {
             ),
         ),
         ToolDefinition(
+            name = CONTACTO,
+            mode = ToolMode.READ,
+            description = "Registra a quien escribe como prospecto para que el equipo de ventas lo contacte. Usala " +
+                "cuando la persona quiera una demo, una propuesta o hablar con alguien, y ya te haya dado su nombre y " +
+                "al menos un telefono o un correo (pidelos con naturalidad, uno a la vez). En WhatsApp su numero se " +
+                "toma de la conversacion. Si despues corrige o agrega datos, vuelve a llamarla: actualiza el mismo " +
+                "prospecto. Nunca inventes datos. Al terminar, dile que el equipo lo contactara pronto.",
+            parameters = listOf(
+                ToolParameter("nombre", "string", true, "Nombre de la persona"),
+                ToolParameter("telefono", "string", false, "Telefono de contacto"),
+                ToolParameter("correo", "string", false, "Correo electronico"),
+                ToolParameter("empresa", "string", false, "Empresa o negocio, si lo menciono"),
+                ToolParameter("interes", "string", false, "Uno de: stackline, tino, software_a_medida, otro"),
+                ToolParameter("mensaje", "string", false, "Resumen breve de lo que necesita, con sus palabras"),
+                ToolParameter("demo", "boolean", false, "true si pidio una demo"),
+            ),
+        ),
+        ToolDefinition(
             name = "empresa.get",
             mode = ToolMode.READ,
             description = "Devuelve moneda, impuesto y estado de la empresa.",
@@ -337,6 +355,7 @@ class ToolCatalog {
 
     companion object {
         const val STICKER = "tino.sticker"
+        const val CONTACTO = "contacto.registrar"
         const val ENVIAR = "cotizacion.enviar"
 
         /** Herramientas que solo tienen sentido con un cliente al otro lado del chat. */

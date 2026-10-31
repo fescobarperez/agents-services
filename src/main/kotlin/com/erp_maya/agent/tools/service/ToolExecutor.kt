@@ -3,6 +3,7 @@ package com.erp_maya.agent.tools.service
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.client.ErpClient
 import com.erp_maya.agent.erp.domain.ErpException
+import com.erp_maya.agent.erp.domain.LeadWrite
 import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.playbook.domain.Playbook
@@ -82,6 +83,7 @@ open class ToolExecutor(
             "clientes.find" -> erp.findCustomerByPhone(t, conversationId, call.stringArg("phone").orEmpty())
             "clientes.buscar" -> erp.searchCustomers(t, conversationId, call.stringArg("query").orEmpty())
             "empresa.get" -> erp.getCompany(t, conversationId)
+            ToolCatalog.CONTACTO -> erp.createLead(t, conversationId, prospecto(contexto, conversationId, call))
             "cotizaciones.preview" -> erp.previewQuote(t, conversationId, call.longArg("customerId"), lineas(call))
             "cotizaciones.issue" -> erp.issueQuote(
                 tenantId = t,
@@ -95,6 +97,32 @@ open class ToolExecutor(
             )
             else -> throw ErpException("La herramienta '${call.name}' no tiene implementacion")
         }
+    }
+
+    /**
+     * Arma el prospecto con lo que dio el modelo. Sin nombre o sin forma de
+     * contacto no se llama al ERP: el error vuelve al modelo para que lo pida.
+     */
+    private fun prospecto(contexto: ExecutionContext, conversationId: Long, call: ToolCall): LeadWrite {
+        val nombre = call.stringArg("nombre")?.trim()
+            ?: throw ErpException("Falta el nombre: pregúntale como se llama")
+        val telefono = call.stringArg("telefono")?.trim()
+        val correo = call.stringArg("correo")?.trim()
+        if (telefono == null && correo == null) {
+            throw ErpException("Falta un telefono o un correo: pídele uno para que ventas lo contacte")
+        }
+        return LeadWrite(
+            name = nombre.take(150),
+            companyName = call.stringArg("empresa")?.trim()?.take(150),
+            phone = telefono?.take(40),
+            email = correo?.take(150),
+            interest = call.stringArg("interes")?.trim()?.take(80),
+            message = call.stringArg("mensaje")?.trim()?.take(1000),
+            wantsDemo = esVerdadero(call.arguments["demo"]),
+            // Los canales de WhatsApp se reconocen tambien por la cuenta (wa:…).
+            source = if (ToolCatalog.conStickers(contexto)) "tino_whatsapp" else origenProspecto(contexto.channel.kind),
+            sourceRef = "conv:$conversationId",
+        )
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -146,3 +174,18 @@ open class ToolExecutor(
  */
 internal fun ocultaPrecios(playbook: Playbook, kindCanal: String): Boolean =
     playbook.limites.soloTotal && playbook.audiencia(kindCanal) != Playbook.AUDIENCIA_VENDEDOR
+
+/** De donde vino el prospecto, segun el canal de la conversacion. */
+internal fun origenProspecto(kindCanal: String): String = when (kindCanal.lowercase()) {
+    "web" -> "tino_web"
+    "whatsapp" -> "tino_whatsapp"
+    else -> "manual"
+}
+
+/** El modelo a veces manda booleanos como texto ("true", "si"). */
+internal fun esVerdadero(valor: Any?): Boolean = when (valor) {
+    is Boolean -> valor
+    is String -> valor.trim().lowercase() in setOf("true", "si", "sí", "1", "yes")
+    is Number -> valor.toInt() != 0
+    else -> false
+}

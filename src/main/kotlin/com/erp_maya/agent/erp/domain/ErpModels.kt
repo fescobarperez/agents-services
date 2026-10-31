@@ -329,3 +329,34 @@ data class ErpChangeRequest(
     @Nullable val clientMessage: String? = null,
     @Nullable val parentId: Long? = null,
 )
+
+/** Prospecto que TINO deja en el ERP (POST /api/leads). */
+@Serdeable
+data class LeadWrite(
+    val name: String,
+    @Nullable val companyName: String? = null,
+    @Nullable val phone: String? = null,
+    @Nullable val email: String? = null,
+    @Nullable val interest: String? = null,
+    @Nullable val message: String? = null,
+    val wantsDemo: Boolean = false,
+    /** tino_web | tino_whatsapp | web_form */
+    val source: String,
+    /**
+     * La conversacion de origen: si el visitante corrige un dato, se actualiza
+     * el mismo prospecto. Nulo en el formulario de contacto (cada envio es uno).
+     */
+    @Nullable val sourceRef: String? = null,
+)
+
+@Serdeable
+data class LeadAck(
+    val id: Long,
+    val name: String,
+    @Nullable val phone: String? = null,
+    @Nullable val email: String? = null,
+    val wantsDemo: Boolean = false,
+    val status: String = "nuevo",
+    /** El ERP aviso por correo al equipo de ventas en esta llamada. */
+    val notified: Boolean = false,
+)

@@ -158,7 +158,15 @@ open class AgentLoop(
             )
 
             for (invocacion in salida.completion.toolCalls) {
-                val call = ToolCall(invocacion.name, invocacion.arguments)
+                val call = ToolCall(invocacion.name, invocacion.arguments).let { c ->
+                    // En WhatsApp el numero de quien escribe ya se conoce: el prospecto
+                    // lo lleva aunque el modelo no lo haya pedido.
+                    if (c.name == ToolCatalog.CONTACTO && telefono != null && c.stringArg("telefono") == null) {
+                        c.copy(arguments = c.arguments + ("telefono" to telefono))
+                    } else {
+                        c
+                    }
+                }
                 log.info("conversation={} herramienta {} args={}", conversationId, call.name, call.arguments)
                 val resultado = if (call.name == ToolCatalog.STICKER) {
                     // No toca ningun sistema: deja la expresion en el turno y

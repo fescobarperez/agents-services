@@ -5,7 +5,14 @@
  *   <script src="https://AGENTES/v1/web/widget.js" data-key="wk_..." async></script>
  *
  * Opcionales: data-position="left" (por defecto a la derecha), data-open="true"
- * (abre el chat al cargar), data-lang="es|en" (por defecto, el del navegador).
+ * (abre el chat al cargar), data-lang="es|en" (por defecto, el del navegador),
+ * data-accent="#RRGGBB" (ojos e insignia de Tino; por defecto, un tono claro
+ * del color del canal), data-badge="https://…/logo.svg" (imagen cuadrada que
+ * reemplaza el símbolo en el pecho de Tino, p. ej. el logo de la empresa).
+ *
+ * API para el sitio: cuando el chat está listo se dispara 'stackline-chat:ready'
+ * en window y existen window.StacklineChat.open() / .close() (p. ej. para un
+ * botón "Habla con nosotros" de la propia página).
  *
  * Sin dependencias y dentro de un Shadow DOM: no hereda ni pisa los estilos
  * del sitio. La conversación se guarda en este navegador (localStorage).
@@ -26,6 +33,15 @@
   var LEFT = script.getAttribute('data-position') === 'left';
   var OPEN = script.getAttribute('data-open') === 'true';
   var LANG = (script.getAttribute('data-lang') || navigator.language || 'es').slice(0, 2) === 'en' ? 'en' : 'es';
+  var ACCENT = /^#[0-9a-f]{6}$/i.test(script.getAttribute('data-accent') || '') ? script.getAttribute('data-accent') : null;
+  // Solo https (o http en localhost) para no aceptar javascript: ni data: arbitrarios.
+  var BADGE = (function (u) {
+    if (!u) return null;
+    try {
+      var url = new URL(u, location.href);
+      return url.protocol === 'https:' || (url.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/.test(url.hostname)) ? url.href : null;
+    } catch (e) { return null; }
+  })(script.getAttribute('data-badge') || '');
   var STORE = 'stackline-chat:' + KEY;
   var MAX_HIST = 60;
 
@@ -83,14 +99,51 @@
     return l > 0.62 ? '#1d1b1c' : '#ffffff';
   }
 
+  /** Mezcla dos colores #RRGGBB: t=0 devuelve `a`, t=1 devuelve `b`. */
+  function mezclar(a, b, t) {
+    var x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16);
+    var c = [16, 8, 0].map(function (s) {
+      var u = (x >> s) & 255, v = (y >> s) & 255;
+      return Math.round(u + (v - u) * t);
+    });
+    return '#' + c.map(function (n) { return (n < 16 ? '0' : '') + n.toString(16); }).join('');
+  }
+
   var CSS = [
     ':host{all:initial}',
     '*{box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}',
     '.wrap{position:fixed;bottom:20px;' + (LEFT ? 'left' : 'right') + ':20px;z-index:2147483000;display:flex;flex-direction:column;align-items:' + (LEFT ? 'flex-start' : 'flex-end') + ';gap:12px}',
-    '.launcher{width:58px;height:58px;border-radius:50%;border:0;cursor:pointer;background:var(--c);color:var(--on);display:grid;place-items:center;box-shadow:0 6px 20px rgba(0,0,0,.22);transition:transform .15s ease}',
+    '.launcher{width:60px;height:60px;border-radius:50%;border:0;cursor:pointer;background:var(--c);color:var(--on);display:grid;place-items:center;box-shadow:0 6px 20px rgba(0,0,0,.22);transition:transform .15s ease}',
     '.launcher:hover{transform:scale(1.06)}',
     '.launcher:focus-visible,.icon-btn:focus-visible,.send:focus-visible,.choice:focus-visible{outline:3px solid var(--c);outline-offset:2px}',
-    '.launcher svg{width:28px;height:28px}',
+    '.launcher>svg{width:28px;height:28px}',
+    // Tino asomado por la ventanilla del boton (mismo recorte que el widget del ERP):
+    // la cabeza sale del circulo y el cuerpo se corta en la mitad inferior.
+    '.launcher{position:relative;overflow:visible}',
+    ".tino-win{position:absolute;inset:0;pointer-events:none;clip-path:path('M-30 -40H90V40H58.28A30 30 0 0 1 1.72 40H-30Z')}",
+    '.tino-fig{position:absolute;left:50%;bottom:-26px;transform:translateX(-50%);line-height:0}',
+    '.tino-fig svg{display:block;overflow:visible;width:82px;height:91px}',
+    // Con logo en el pecho, Tino asoma un poco mas para que la insignia se vea.
+    '.tino-fig.con-insignia{bottom:-17px}',
+    '.t-fb{transform-box:fill-box;transform-origin:center}',
+    '.t-blink{animation:t-blink 4s ease-in-out infinite}',
+    '.t-bob{animation:t-bob 3.2s ease-in-out infinite}',
+    '.t-head{transform-box:view-box;transform-origin:32px 42px;transition:transform .3s ease}',
+    '.t-arm{transform-box:view-box;transition:transform .3s ease}',
+    '.t-arm-l{transform-origin:18px 47px;transform:rotate(8deg)}',
+    '.t-arm-r{transform-origin:46px 47px;transform:rotate(-8deg)}',
+    '.t-wave{transform-box:view-box;transform-origin:46px 47px}',
+    '.t-happy{display:none}',
+    '.launcher:hover .t-happy,.launcher:focus-visible .t-happy{display:inline;animation:t-hop .9s ease-in-out infinite}',
+    '.launcher:hover .t-eye,.launcher:focus-visible .t-eye{display:none}',
+    '.launcher:hover .t-head,.launcher:focus-visible .t-head{transform:rotate(-6deg)}',
+    '.launcher:hover .t-arm-r,.launcher:focus-visible .t-arm-r{transform:rotate(-145deg)}',
+    '.launcher:hover .t-wave,.launcher:focus-visible .t-wave{animation:t-wave .7s ease-in-out infinite alternate}',
+    '@keyframes t-blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}',
+    '@keyframes t-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(1.2px)}}',
+    '@keyframes t-hop{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px)}}',
+    '@keyframes t-wave{from{transform:rotate(-14deg)}to{transform:rotate(14deg)}}',
+    '@media (prefers-reduced-motion:reduce){.t-blink,.t-bob,.t-hop,.t-wave,.launcher:hover .t-wave,.launcher:hover .t-happy{animation:none}.t-head,.t-arm{transition:none}}',
     '.panel{width:370px;height:560px;max-height:calc(100vh - 110px);background:#fff;border-radius:20px;box-shadow:0 12px 40px rgba(0,0,0,.25);display:none;flex-direction:column;overflow:hidden;color:#1d1b1c}',
     '.panel.open{display:flex;animation:in .18s ease-out}',
     '@keyframes in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}',
@@ -134,8 +187,42 @@
     send: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5 3 10l12 2-12 2z"/></svg>',
   };
 
+  /**
+   * Tino de cuerpo completo (el mismo personaje del widget del ERP, en SVG
+   * plano). Colores: contorno y circulo salen del color del canal; ojos e
+   * insignia, de data-accent.
+   */
+  function tino(color) {
+    var ojo = ACCENT || mezclar(color, '#ffffff', 0.7);
+    var marca = ACCENT ? mezclar(ACCENT, '#000000', 0.25) : color;
+    var contorno = mezclar(color, '#000000', 0.35);
+    var b = 'fill="#ffffff" stroke="' + contorno + '" stroke-width="1.6"';
+    return '<span class="tino-win" aria-hidden="true"><span class="tino-fig' + (BADGE ? ' con-insignia' : '') + '">' +
+      '<svg viewBox="-6 -4 76 84" focusable="false">' +
+      '<defs><filter id="stk-halo" x="-20%" y="-20%" width="140%" height="140%">' +
+      '<feMorphology in="SourceAlpha" operator="dilate" radius="1.6" result="borde"/>' +
+      '<feFlood flood-color="#F6F2EA"/><feComposite in2="borde" operator="in" result="halo"/>' +
+      '<feMerge><feMergeNode in="halo"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>' +
+      '<g filter="url(#stk-halo)"><g class="t-bob">' +
+      '<rect x="24" y="61" width="6.5" height="13" rx="3.2" ' + b + '/>' +
+      '<rect x="33.5" y="61" width="6.5" height="13" rx="3.2" ' + b + '/>' +
+      '<g class="t-arm t-arm-l"><rect x="15" y="44" width="6" height="16" rx="3" ' + b + '/></g>' +
+      '<g class="t-arm t-arm-r"><g class="t-wave"><rect x="43" y="44" width="6" height="16" rx="3" ' + b + '/></g></g>' +
+      '<rect x="20.5" y="41" width="23" height="22" rx="8.5" ' + b + '/>' +
+      (BADGE
+        ? '<image href="' + BADGE.replace(/"/g, '%22') + '" x="25.5" y="44" width="13" height="13" preserveAspectRatio="xMidYMid meet"/>'
+        : '<path d="M12 4a8 8 0 1 1-8 8V4z" transform="translate(26.5 46.5) scale(.46)" fill="' + marca + '"/>') +
+      '<g class="t-head">' +
+      '<path d="M32 6a20 20 0 1 1-20 20V6z" ' + b + ' stroke-linejoin="round"/>' +
+      '<rect x="18" y="15" width="28" height="20" rx="7" fill="#17151C"/>' +
+      '<rect x="21" y="18" width="5" height="2.2" rx="1.1" fill="#3A3540"/>' +
+      '<circle class="t-eye t-fb t-blink" cx="33" cy="25" r="3.6" fill="' + ojo + '"/>' +
+      '<path class="t-happy" d="M28 27q5-6 10 0" fill="none" stroke="' + ojo + '" stroke-width="2.6" stroke-linecap="round"/>' +
+      '</g></g></g></svg></span></span>';
+  }
+
   // ── DOM ─────────────────────────────────────────────────────────────────
-  var host, root, panel, log, input, sendBtn, launcher;
+  var host, root, panel, log, input, sendBtn, launcher, TINO;
 
   function el(tag, cls, html) {
     var n = document.createElement(tag);
@@ -163,6 +250,7 @@
     host.setAttribute('data-stackline-chat', '');
     root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     var color = /^#[0-9a-f]{6}$/i.test(config.color || '') ? config.color : '#731C37';
+    TINO = tino(color);
 
     var style = el('style'); style.textContent = CSS; root.appendChild(style);
     var wrap = el('div', 'wrap');
@@ -215,7 +303,7 @@
 
     panel.appendChild(head); panel.appendChild(log); panel.appendChild(compose); panel.appendChild(foot);
 
-    launcher = el('button', 'launcher', ICON.chat);
+    launcher = el('button', 'launcher', TINO);
     launcher.type = 'button';
     launcher.setAttribute('aria-label', T.open);
     launcher.onclick = function () { abrir(!panel.classList.contains('open')); };
@@ -226,11 +314,17 @@
 
     pintar();
     if (OPEN || estado.open) abrir(true);
+
+    window.StacklineChat = {
+      open: function () { abrir(true); },
+      close: function () { abrir(false); }
+    };
+    try { window.dispatchEvent(new Event('stackline-chat:ready')); } catch (e) { /* navegadores muy viejos */ }
   }
 
   function abrir(si) {
     panel.classList.toggle('open', si);
-    launcher.innerHTML = si ? ICON.close : ICON.chat;
+    launcher.innerHTML = si ? ICON.close : TINO;
     launcher.setAttribute('aria-label', si ? T.close : T.open);
     estado.open = si; guardar();
     if (si) { bajar(); setTimeout(function () { input.focus(); }, 50); }

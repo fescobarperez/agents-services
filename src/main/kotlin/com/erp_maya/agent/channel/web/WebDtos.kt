@@ -41,3 +41,19 @@ data class WebError(val code: String, val message: String)
 
 class WebException(val status: Int, val code: String, override val message: String, val retryAfter: Long? = null) :
     RuntimeException(message)
+
+/** Formulario de contacto de la pagina (POST /v1/web/{key}/contact). */
+@Serdeable
+data class WebContactIn(
+    @Nullable val name: String? = null,
+    @Nullable val email: String? = null,
+    @Nullable val phone: String? = null,
+    @Nullable val company: String? = null,
+    @Nullable val interest: String? = null,
+    @Nullable val message: String? = null,
+    /** Trampa para bots: un campo oculto que una persona nunca llena. */
+    @Nullable val website: String? = null,
+)
+
+@Serdeable
+data class WebContactAck(val ok: Boolean)

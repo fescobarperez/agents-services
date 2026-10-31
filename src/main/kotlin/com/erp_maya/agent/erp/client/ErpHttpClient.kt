@@ -5,6 +5,8 @@ import com.erp_maya.agent.erp.domain.ProductTemplate
 import com.erp_maya.agent.erp.domain.TemplateItemWrite
 import com.erp_maya.agent.erp.domain.CompanyInfo
 import com.erp_maya.agent.erp.domain.CustomerSummary
+import com.erp_maya.agent.erp.domain.LeadAck
+import com.erp_maya.agent.erp.domain.LeadWrite
 import com.erp_maya.agent.erp.domain.ErpQuote
 import com.erp_maya.agent.erp.domain.ErpChangeRequest
 import com.erp_maya.agent.erp.domain.ChangeRequestWrite
@@ -210,6 +212,10 @@ open class ErpHttpClient(
         return uno(HttpRequest.POST("/api/clients", cuerpo), tenantId, conversationId, CustomerSummary::class.java)
             ?: throw ErpException("El ERP no devolvio el cliente creado")
     }
+
+    override fun createLead(tenantId: Long, conversationId: Long, lead: LeadWrite): LeadAck =
+        uno(HttpRequest.POST("/api/leads", lead), tenantId, conversationId, LeadAck::class.java)
+            ?: throw ErpException("El ERP no devolvio el prospecto registrado")
 
     override fun previewQuote(
         tenantId: Long,
