@@ -1,6 +1,8 @@
 package com.erp_maya.agent.quote
 
 import com.erp_maya.agent.api.dto.TurnInput
+import com.erp_maya.agent.cita.CitaService
+import com.erp_maya.agent.cita.ControlService
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.prompt.domain.QuoteDraft
@@ -16,6 +18,8 @@ import java.math.BigDecimal
  * - send_quote                     enviar a revision: aun no habilitado.
  * - cot {boton}                    decision del cliente sobre la cotizacion
  *                                  enviada (botones de WhatsApp), ver [QuoteDecisionService].
+ * - cita {boton}                   respuesta del paciente al recordatorio de
+ *                                  su cita (confirmar, cambiar, cancelar), ver [CitaService].
  *
  * Un fallo del ERP no revienta el turno: se contesta con el motivo y el
  * borrador queda como estaba.
@@ -24,6 +28,8 @@ import java.math.BigDecimal
 open class PanelActionService(
     private val borradores: QuoteDraftService,
     private val decisiones: QuoteDecisionService,
+    private val citas: CitaService,
+    private val controles: ControlService,
 ) {
 
     open fun ejecutar(
@@ -58,6 +64,8 @@ open class PanelActionService(
                         "La cotización ${actual?.quoteNumber ?: ""} quedó como prospecto en el módulo Cotizaciones.",
                 )
                 ACCION_DECISION -> decisiones.ejecutar(contexto, conversationId, actual, payload["boton"]?.toString().orEmpty())
+                ACCION_CITA -> citas.boton(contexto, conversationId, actual, payload["boton"]?.toString().orEmpty())
+                ACCION_CONTROL -> controles.boton(contexto, conversationId, actual, payload["boton"]?.toString().orEmpty())
                 else -> sinCambios(actual, "No reconozco la acción '${input.actionId}'.")
             }
         } catch (e: ErpException) {
@@ -76,6 +84,8 @@ open class PanelActionService(
             "edit_line" -> "[Panel] Editar línea ${p["line_id"]}"
             "send_quote" -> "[Panel] Enviar cotización"
             ACCION_DECISION -> decisiones.describir(p["boton"]?.toString().orEmpty())
+            ACCION_CITA -> citas.describir(p["boton"]?.toString().orEmpty())
+            ACCION_CONTROL -> controles.describir(p["boton"]?.toString().orEmpty())
             else -> "[Panel] ${input.actionId}"
         }
     }
@@ -93,6 +103,10 @@ open class PanelActionService(
     companion object {
         /** actionId con el que el canal entrega un boton `cot:...`. */
         const val ACCION_DECISION = "cot"
+        /** actionId con el que el canal entrega un boton `cita:...` del recordatorio. */
+        const val ACCION_CITA = "cita"
+        /** actionId con el que el canal entrega un boton `ctl:...` del recordatorio de control. */
+        const val ACCION_CONTROL = "ctl"
         private val log = LoggerFactory.getLogger(PanelActionService::class.java)
     }
 }

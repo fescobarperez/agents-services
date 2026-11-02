@@ -183,6 +183,91 @@ data class Mensajes(
     /** Lo que recibe el cliente cuando la empresa agoto los mensajes de IA de su plan en el mes. */
     @JsonProperty("limite_ia") val limiteIa: String =
         "En este momento te atenderá uno de nuestros asesores. En breve te escribe por este medio.",
+    /** Recordatorio de cita (Stackline Salud) y las respuestas a sus botones. */
+    @JsonProperty("recordatorio_cita") val recordatorioCita: PlantillaRecordatorio = PlantillaRecordatorio(),
+    /** Recordatorio de control (Stackline Salud): cómo sigue el paciente y la oferta de agendar. */
+    @JsonProperty("recordatorio_control") val recordatorioControl: PlantillaControl = PlantillaControl(),
+)
+
+/**
+ * Recordatorio de control por WhatsApp, unos dias antes de la fecha limite.
+ * Variables: {paciente} (primer nombre), {fecha} («viernes 13 de
+ * noviembre»), {profesional}, {tipo}, {clinica}.
+ *
+ * Pregunta como sigue el paciente con tres botones (mejor, igual, peor); la
+ * respuesta queda en el control dentro de su caso y despues se ofrece
+ * agendar. No lleva el diagnostico: el mensaje lo puede ver otra persona.
+ * Fuera de la ventana de 24 h sale la plantilla aprobada de `plantilla`
+ * (sus botones, si tiene, en el mismo orden: mejor, igual, peor).
+ */
+@Serdeable
+data class PlantillaControl(
+    val texto: String = "Hola {paciente}, se acerca tu control con {profesional} (antes del {fecha}). " +
+        "¿Cómo te has sentido?",
+    val pie: String = "Tu respuesta le llega a tu médico.",
+    @JsonProperty("boton_mejor") val botonMejor: String = "Mejor",
+    @JsonProperty("boton_igual") val botonIgual: String = "Igual",
+    @JsonProperty("boton_peor") val botonPeor: String = "Peor",
+    val mejor: String = "¡Qué bueno, {paciente}! Igual conviene que {profesional} te revise. " +
+        "¿Qué día te queda bien para tu control? Te digo qué horarios hay libres.",
+    val igual: String = "Gracias por contarnos, {paciente}. Lo anotamos para {profesional}. " +
+        "¿Qué día te queda bien para tu control? Te digo qué horarios hay libres.",
+    val peor: String = "Lamentamos que te sientas peor, {paciente}. Ya lo anotamos para {profesional}. " +
+        "Si es urgente, llama a la clínica o acude a emergencias. ¿Quieres que te busque el horario más próximo?",
+    @JsonProperty("no_es_tuyo") val noEsTuyo: String =
+        "No encuentro ese control a tu nombre. Si necesitas ayuda con una cita, cuéntame y te ayudo.",
+    @JsonProperty("ya_atendido") val yaAtendido: String =
+        "Ese control ya no está pendiente. Si necesitas una cita, escríbeme y te ayudo.",
+    /** Plantilla aprobada en Meta para fuera de la ventana de 24 h; null = no hay. */
+    @Nullable val plantilla: PlantillaMeta? = null,
+)
+
+/**
+ * Recordatorio de cita por WhatsApp. Variables: {paciente} (primer nombre),
+ * {fecha} («martes 3 de noviembre»), {hora}, {tipo}, {profesional},
+ * {clinica}; en `no_vigente`, ademas {estado}.
+ *
+ * Dentro de las 24 h desde el ultimo mensaje del paciente sale `texto` con
+ * tres botones. Fuera de esa ventana Meta solo deja mandar una plantilla
+ * aprobada: la de `plantilla`; sin ella el recordatorio no sale y el ERP lo
+ * marca como fallido para que recepcion llame.
+ */
+@Serdeable
+data class PlantillaRecordatorio(
+    val texto: String = "Hola {paciente}, te recordamos tu cita de {tipo} en {clinica} el {fecha} a las {hora} " +
+        "con {profesional}. ¿Nos confirmas tu asistencia?",
+    val pie: String = "Si no puedes asistir, avísanos por aquí.",
+    @JsonProperty("boton_confirmar") val botonConfirmar: String = "Confirmar",
+    @JsonProperty("boton_cambiar") val botonCambiar: String = "Cambiar fecha",
+    @JsonProperty("boton_cancelar") val botonCancelar: String = "Cancelar cita",
+    val confirmada: String = "¡Gracias, {paciente}! Tu cita del {fecha} a las {hora} quedó confirmada. Te esperamos.",
+    val cambiar: String = "Claro, {paciente}. ¿Qué día y a qué hora te queda mejor? Te digo qué horarios hay libres.",
+    @JsonProperty("confirmar_cancelar") val confirmarCancelar: String =
+        "¿Seguro que quieres cancelar tu cita del {fecha} a las {hora}?",
+    @JsonProperty("boton_si_cancelar") val botonSiCancelar: String = "Sí, cancelar",
+    @JsonProperty("boton_mantener") val botonMantener: String = "No, mantenerla",
+    val cancelada: String = "Listo, cancelamos tu cita del {fecha} a las {hora}. Si quieres agendar otra fecha, escríbeme.",
+    val mantener: String = "Perfecto, tu cita del {fecha} a las {hora} sigue en pie. ¡Te esperamos!",
+    @JsonProperty("no_vigente") val noVigente: String =
+        "Esa cita ya no está vigente ({estado}). Si necesitas agendar otra, escríbeme y te ayudo.",
+    @JsonProperty("no_es_tuya") val noEsTuya: String =
+        "No encuentro esa cita a tu nombre. Si necesitas ayuda con una cita, cuéntame y te ayudo.",
+    /** Plantilla aprobada en Meta para fuera de la ventana de 24 h; null = no hay. */
+    @Nullable val plantilla: PlantillaMeta? = null,
+)
+
+/**
+ * Plantilla de WhatsApp aprobada en Meta. `variables` dice que va en cada
+ * {{n}} del cuerpo, en orden (claves de [PlantillaRecordatorio]). Si la
+ * plantilla tiene botones de respuesta rapida, deben ser tres y en este
+ * orden: confirmar, cambiar, cancelar.
+ */
+@Serdeable
+data class PlantillaMeta(
+    val nombre: String,
+    val idioma: String = "es",
+    val variables: List<String> = listOf("paciente", "clinica", "fecha", "hora"),
+    val botones: Boolean = true,
 )
 
 /**

@@ -40,6 +40,9 @@ class WhatsAppParser {
         "interactive" -> m.interactive?.buttonReply?.id
             ?: m.interactive?.listReply?.id
             ?: m.interactive?.buttonReply?.title
+        // Respuesta rapida de una plantilla (el recordatorio de cita fuera de
+        // la ventana): el payload es el id del boton, como en un interactivo.
+        "button" -> m.button?.payload?.takeIf { it.isNotBlank() } ?: m.button?.text
         // De una foto, el texto es lo que el cliente escribio al pie (si escribio).
         "image" -> m.image?.caption?.takeIf { it.isNotBlank() }
         else -> null

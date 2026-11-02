@@ -3,6 +3,8 @@ package com.erp_maya.agent.channel.whatsapp.service
 import com.erp_maya.agent.api.dto.ConversationRef
 import com.erp_maya.agent.api.dto.InputImage
 import com.erp_maya.agent.api.dto.TurnInput
+import com.erp_maya.agent.cita.CitaRules
+import com.erp_maya.agent.cita.ControlRules
 import com.erp_maya.agent.quote.PanelActionService
 import com.erp_maya.agent.quote.QuoteDecisionService
 import com.erp_maya.agent.api.dto.TurnRequest
@@ -141,7 +143,7 @@ open class WhatsAppQueueConsumer(
             .onFailure { log.warn("evento {} con payload ilegible", evento.id, it) }
             .getOrNull()
 
-    private companion object {
+    internal companion object {
         private val log = LoggerFactory.getLogger(WhatsAppQueueConsumer::class.java)
 
         const val CANAL = "whatsapp"
@@ -156,17 +158,24 @@ open class WhatsAppQueueConsumer(
             wamids.singleOrNull() ?: ("rafaga:" + sha256(wamids.sorted().joinToString(",")).take(40))
 
         /**
-         * Un boton de decision (`cot:accion:id:version`) llega como el texto
-         * del mensaje: se convierte en accion para que lo resuelva el codigo y
-         * no el modelo. Si en la misma rafaga hubo texto, gana el ultimo boton.
+         * Un boton de decision (`cot:accion:id:version`), del recordatorio de
+         * cita (`cita:accion:id`) o del de control (`ctl:respuesta:id`) llega como el texto del mensaje: se convierte
+         * en accion para que lo resuelva el codigo y no el modelo. Si en la
+         * misma rafaga hubo texto, gana el ultimo boton.
          */
         internal fun entrada(textos: List<String>, unido: String): TurnInput {
-            val boton = textos.lastOrNull { QuoteDecisionService.esBoton(it) }?.trim()
+            val boton = textos.lastOrNull {
+                QuoteDecisionService.esBoton(it) || CitaRules.esBoton(it) || ControlRules.esBoton(it)
+            }?.trim()
                 ?: return TurnInput(type = "text", text = unido)
             if (textos.size > 1) log.info("rafaga con boton {}: se ignora el texto que lo acompaña", boton)
             return TurnInput(
                 type = "action",
-                actionId = PanelActionService.ACCION_DECISION,
+                actionId = when {
+                    CitaRules.esBoton(boton) -> PanelActionService.ACCION_CITA
+                    ControlRules.esBoton(boton) -> PanelActionService.ACCION_CONTROL
+                    else -> PanelActionService.ACCION_DECISION
+                },
                 payload = mapOf("boton" to boton),
             )
         }

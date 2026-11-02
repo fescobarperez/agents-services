@@ -1,5 +1,6 @@
 package com.erp_maya.agent.api.service
 
+import com.erp_maya.agent.cita.CitaService
 import com.erp_maya.agent.api.dto.AgentEvent
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.domain.ErpException
@@ -71,6 +72,7 @@ open class AgentLoop(
     private val disenos: DisenoService,
     private val renders: RenderService,
     private val adjuntos: AdjuntoDiseno,
+    private val citas: CitaService,
 ) {
 
     open fun run(
@@ -172,6 +174,10 @@ open class AgentLoop(
                     // No toca ningun sistema: deja la expresion en el turno y
                     // el canal decide como pintarla. Una por turno.
                     expresar(contexto, call, tarjetas)
+                } else if (call.name.startsWith(CitaService.PREFIJO)) {
+                    // Agenda de Stackline Salud: el paciente es quien escribe
+                    // (su numero en WhatsApp), no el cliente del borrador.
+                    citas.ejecutar(contexto, conversationId, call, telefono)
                 } else if (call.name.startsWith(PREFIJO_BORRADOR)) {
                     // El borrador vive en el estado del hilo: estas herramientas
                     // lo leen y lo reescriben, por eso no pasan por ToolExecutor.
@@ -507,7 +513,7 @@ open class AgentLoop(
             "cotizacion.solicitar_cambio", "cotizacion.consultar", "cotizaciones.issue",
             "cotizacion.diseno", "cotizacion.confirmar_medidas", "cotizacion.producto_nuevo", "cotizacion.render", "cotizacion.aprobar_diseno",
             "cotizacion.aprobar", "cotizacion.rechazar", "cotizacion.motivo_rechazo",
-        )
+        ) + CitaService.MUTANTES
 
         /** Verbos con los que el modelo anuncia que hizo algo. */
         private val AFIRMA = Regex(

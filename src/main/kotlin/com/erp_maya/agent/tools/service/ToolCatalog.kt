@@ -302,6 +302,80 @@ class ToolCatalog {
                 ToolParameter("demo", "boolean", false, "true si pidio una demo"),
             ),
         ),
+        // ── Citas (Stackline Salud) ──────────────────────────────────────
+        ToolDefinition(
+            name = "citas.opciones",
+            mode = ToolMode.READ,
+            description = "Tipos de cita (con su duracion y precio) y profesionales de la clinica, y la fecha de hoy. " +
+                "Usala antes de buscar horarios.",
+        ),
+        ToolDefinition(
+            name = "citas.disponibilidad",
+            mode = ToolMode.READ,
+            description = "Horarios libres para un tipo de cita en un dia. Sin profesional, trae los de todos. Si ese " +
+                "dia no hay, devuelve el dia libre mas cercano. Ofrece 2 o 3 horarios, no la lista completa.",
+            parameters = listOf(
+                ToolParameter("typeId", "integer", true, "Id del tipo de cita (de citas.opciones)"),
+                ToolParameter("fecha", "string", true, "Dia en formato AAAA-MM-DD, o hoy / mañana"),
+                ToolParameter("professionalId", "integer", false, "Id del profesional, si el paciente tiene preferencia"),
+                ToolParameter("desde", "string", false, "Hora minima HH:mm (p. ej. 14:00 si prefiere la tarde)"),
+            ),
+        ),
+        ToolDefinition(
+            name = "citas.agendar",
+            mode = ToolMode.READ,
+            description = "Agenda la cita en un horario libre de citas.disponibilidad, SOLO despues de que el paciente " +
+                "confirme dia, hora y tipo. Queda pendiente de que la clinica la confirme: diselo. Si es la primera " +
+                "vez que agenda (o agenda para otra persona, como un hijo), manda el nombre completo del paciente.",
+            parameters = listOf(
+                ToolParameter("typeId", "integer", true, "Id del tipo de cita"),
+                ToolParameter("professionalId", "integer", true, "Id del profesional"),
+                ToolParameter("inicio", "string", true, "El valor 'inicio' del horario elegido en citas.disponibilidad"),
+                ToolParameter("nombre", "string", false, "Nombre completo del paciente"),
+                ToolParameter("motivo", "string", false, "Motivo de la consulta, con sus palabras y breve"),
+                ToolParameter("telefono", "string", false, "Telefono del paciente (solo chat web; en WhatsApp se ignora)"),
+                ToolParameter("followUpId", "integer", false, "Id del control que se agenda (del boton del recordatorio de control)"),
+            ),
+        ),
+        ToolDefinition(
+            name = "citas.mis_citas",
+            mode = ToolMode.READ,
+            description = "Proximas citas de quien escribe (y de quienes tienen su mismo numero), con su id.",
+            parameters = listOf(
+                ToolParameter("telefono", "string", false, "Telefono del paciente (solo chat web; en WhatsApp se ignora)"),
+            ),
+        ),
+        ToolDefinition(
+            name = "citas.reprogramar",
+            mode = ToolMode.READ,
+            description = "Mueve una cita a otro horario libre de citas.disponibilidad (mismo tipo de cita). Usala solo " +
+                "cuando el paciente confirme el nuevo horario. Vuelve a quedar pendiente de confirmar por la clinica.",
+            parameters = listOf(
+                ToolParameter("citaId", "integer", true, "Id de la cita (de citas.mis_citas o del boton del recordatorio)"),
+                ToolParameter("inicio", "string", true, "El valor 'inicio' del nuevo horario"),
+                ToolParameter("professionalId", "integer", false, "Otro profesional; si no, el mismo"),
+                ToolParameter("telefono", "string", false, "Telefono del paciente (solo chat web; en WhatsApp se ignora)"),
+            ),
+        ),
+        ToolDefinition(
+            name = "citas.cancelar",
+            mode = ToolMode.READ,
+            description = "Cancela una cita. Pregunta antes si esta seguro y ofrece reprogramarla en su lugar.",
+            parameters = listOf(
+                ToolParameter("citaId", "integer", true, "Id de la cita"),
+                ToolParameter("motivo", "string", false, "Motivo, si lo dijo"),
+                ToolParameter("telefono", "string", false, "Telefono del paciente (solo chat web; en WhatsApp se ignora)"),
+            ),
+        ),
+        ToolDefinition(
+            name = "citas.confirmar",
+            mode = ToolMode.READ,
+            description = "Confirma la asistencia del paciente a una cita (cuando responde que si va).",
+            parameters = listOf(
+                ToolParameter("citaId", "integer", true, "Id de la cita"),
+                ToolParameter("telefono", "string", false, "Telefono del paciente (solo chat web; en WhatsApp se ignora)"),
+            ),
+        ),
         ToolDefinition(
             name = "empresa.get",
             mode = ToolMode.READ,

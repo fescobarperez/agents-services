@@ -22,6 +22,19 @@ import com.erp_maya.agent.erp.domain.ProductSummary
 import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.erp.domain.QuotePreview
 import com.erp_maya.agent.erp.domain.StockInfo
+import com.erp_maya.agent.erp.domain.SaludAppointment
+import com.erp_maya.agent.erp.domain.SaludAppointmentType
+import com.erp_maya.agent.erp.domain.SaludAppointmentWrite
+import com.erp_maya.agent.erp.domain.SaludAvailability
+import com.erp_maya.agent.erp.domain.SaludCandidate
+import com.erp_maya.agent.erp.domain.SaludFeedbackResult
+import com.erp_maya.agent.erp.domain.SaludFeedbackWrite
+import com.erp_maya.agent.erp.domain.SaludPatientCreate
+import com.erp_maya.agent.erp.domain.SaludPatientDetail
+import com.erp_maya.agent.erp.domain.SaludPatientFromClient
+import com.erp_maya.agent.erp.domain.SaludProfessional
+import com.erp_maya.agent.erp.domain.SaludRescheduleWrite
+import com.erp_maya.agent.erp.domain.SaludStatusWrite
 import io.micronaut.core.annotation.Nullable
 import io.micronaut.core.type.Argument
 import io.micronaut.http.HttpRequest
@@ -453,6 +466,76 @@ open class ErpHttpClient(
 
     // ── plomeria ────────────────────────────────────────────────────────────
 
+    // ── Stackline Salud (agenda) ─────────────────────────────────────────
+
+    override fun saludTypes(tenantId: Long, conversationId: Long): List<SaludAppointmentType> =
+        lista(HttpRequest.GET<Any>("$SALUD/appointment-types"), tenantId, conversationId, SaludAppointmentType::class.java)
+
+    override fun saludProfessionals(tenantId: Long, conversationId: Long): List<SaludProfessional> =
+        lista(HttpRequest.GET<Any>("$SALUD/professionals"), tenantId, conversationId, SaludProfessional::class.java)
+
+    override fun saludAvailability(
+        tenantId: Long, conversationId: Long, professionalId: Long, date: String, typeId: Long,
+    ): SaludAvailability? {
+        val uri = UriBuilder.of("$SALUD/availability")
+            .queryParam("professionalId", professionalId)
+            .queryParam("date", date)
+            .queryParam("typeId", typeId)
+            .build().toString()
+        return uno(HttpRequest.GET<Any>(uri), tenantId, conversationId, SaludAvailability::class.java)
+    }
+
+    override fun saludAppointments(
+        tenantId: Long, conversationId: Long, patientId: Long?, from: String, to: String,
+    ): List<SaludAppointment> {
+        val uri = UriBuilder.of("$SALUD/appointments")
+            .queryParam("from", from)
+            .queryParam("to", to)
+            .let { b -> if (patientId != null) b.queryParam("patientId", patientId) else b }
+            .build().toString()
+        return lista(HttpRequest.GET<Any>(uri), tenantId, conversationId, SaludAppointment::class.java)
+    }
+
+    override fun saludAppointment(tenantId: Long, conversationId: Long, appointmentId: Long): SaludAppointment? =
+        uno(HttpRequest.GET<Any>("$SALUD/appointments/$appointmentId"), tenantId, conversationId, SaludAppointment::class.java)
+
+    override fun saludCreateAppointment(tenantId: Long, conversationId: Long, cita: SaludAppointmentWrite): SaludAppointment =
+        uno(HttpRequest.POST("$SALUD/appointments", cita), tenantId, conversationId, SaludAppointment::class.java)
+            ?: throw ErpException("El ERP no devolvio la cita creada")
+
+    override fun saludReschedule(
+        tenantId: Long, conversationId: Long, appointmentId: Long, cambio: SaludRescheduleWrite,
+    ): SaludAppointment =
+        uno(HttpRequest.PUT("$SALUD/appointments/$appointmentId/schedule", cambio), tenantId, conversationId, SaludAppointment::class.java)
+            ?: throw ErpException("No existe la cita $appointmentId")
+
+    override fun saludChangeStatus(
+        tenantId: Long, conversationId: Long, appointmentId: Long, cambio: SaludStatusWrite,
+    ): SaludAppointment =
+        uno(HttpRequest.POST("$SALUD/appointments/$appointmentId/status", cambio), tenantId, conversationId, SaludAppointment::class.java)
+            ?: throw ErpException("No existe la cita $appointmentId")
+
+    override fun saludFollowUpFeedback(
+        tenantId: Long, conversationId: Long, followUpId: Long, respuesta: SaludFeedbackWrite,
+    ): SaludFeedbackResult =
+        uno(HttpRequest.POST("$SALUD/follow-ups/$followUpId/feedback", respuesta), tenantId, conversationId, SaludFeedbackResult::class.java)
+            ?: throw ErpException("No existe el control $followUpId")
+
+    override fun saludCandidates(tenantId: Long, conversationId: Long, query: String): List<SaludCandidate> {
+        val uri = UriBuilder.of("$SALUD/patients/candidates").queryParam("q", query).build().toString()
+        return lista(HttpRequest.GET<Any>(uri), tenantId, conversationId, SaludCandidate::class.java)
+    }
+
+    override fun saludCreatePatient(tenantId: Long, conversationId: Long, alta: SaludPatientCreate): SaludPatientDetail =
+        uno(HttpRequest.POST("$SALUD/patients", alta), tenantId, conversationId, SaludPatientDetail::class.java)
+            ?: throw ErpException("El ERP no devolvio el paciente creado")
+
+    override fun saludPatientFromClient(
+        tenantId: Long, conversationId: Long, clientId: Long, alta: SaludPatientFromClient,
+    ): SaludPatientDetail =
+        uno(HttpRequest.POST("$SALUD/patients/from-client/$clientId", alta), tenantId, conversationId, SaludPatientDetail::class.java)
+            ?: throw ErpException("No existe el cliente $clientId")
+
     /**
      * Toda peticion lleva empresa y conversacion, aunque la URL ya las
      * implicara: es lo que permite al ERP auditar en nombre de quien actuo el
@@ -563,6 +646,7 @@ open class ErpHttpClient(
         const val VIGENCIA_DIAS = 15L
         const val CREADO_POR = "Asistente Tino"
         const val ACTOR_CLIENTE = "Cliente (WhatsApp, vía Tino)"
+        const val SALUD = "/api/salud"
         private val PDF = MediaType("application/pdf")
         private val log = LoggerFactory.getLogger(ErpHttpClient::class.java)
     }

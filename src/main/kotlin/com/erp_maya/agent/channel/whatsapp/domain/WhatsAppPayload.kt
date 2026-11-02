@@ -53,7 +53,12 @@ data class WaMessage(
     @Nullable val text: WaText? = null,
     @Nullable val interactive: WaInteractive? = null,
     @Nullable val image: WaImage? = null,
+    /** Boton de respuesta rapida de una plantilla: llega como `type: "button"`. */
+    @Nullable val button: WaTemplateButton? = null,
 )
+
+@Serdeable
+data class WaTemplateButton(@Nullable val payload: String? = null, @Nullable val text: String? = null)
 
 /**
  * Una foto. Meta no manda los bytes: manda el id del archivo, que se baja

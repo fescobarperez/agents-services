@@ -21,6 +21,19 @@ import com.erp_maya.agent.erp.domain.QuoteLineRequest
 import com.erp_maya.agent.erp.domain.QuotePreview
 import com.erp_maya.agent.erp.domain.QuoteLineWrite
 import com.erp_maya.agent.erp.domain.StockInfo
+import com.erp_maya.agent.erp.domain.SaludAppointment
+import com.erp_maya.agent.erp.domain.SaludAppointmentType
+import com.erp_maya.agent.erp.domain.SaludAppointmentWrite
+import com.erp_maya.agent.erp.domain.SaludAvailability
+import com.erp_maya.agent.erp.domain.SaludCandidate
+import com.erp_maya.agent.erp.domain.SaludFeedbackResult
+import com.erp_maya.agent.erp.domain.SaludFeedbackWrite
+import com.erp_maya.agent.erp.domain.SaludPatientCreate
+import com.erp_maya.agent.erp.domain.SaludPatientDetail
+import com.erp_maya.agent.erp.domain.SaludPatientFromClient
+import com.erp_maya.agent.erp.domain.SaludProfessional
+import com.erp_maya.agent.erp.domain.SaludRescheduleWrite
+import com.erp_maya.agent.erp.domain.SaludStatusWrite
 import java.math.BigDecimal
 
 /**
@@ -168,4 +181,51 @@ interface ErpClient {
     /** Anota en la bitacora de la cotizacion sin cambiar su estado. */
     fun addQuoteNote(tenantId: Long, conversationId: Long, quoteId: Long, note: String): Unit =
         throw ErpException("addQuoteNote no implementado")
+
+    // ── Stackline Salud (agenda) ─────────────────────────────────────────
+    // El token del asistente solo puede ver y registrar pacientes y manejar
+    // citas; el ERP valida el permiso en cada llamada.
+
+    /** Tipos de cita de la clinica. */
+    fun saludTypes(tenantId: Long, conversationId: Long): List<SaludAppointmentType> =
+        throw ErpException("saludTypes no implementado")
+
+    /** Usuarios con su perfil de profesional (los que no atienden vienen con configured=false). */
+    fun saludProfessionals(tenantId: Long, conversationId: Long): List<SaludProfessional> =
+        throw ErpException("saludProfessionals no implementado")
+
+    /** Horarios libres de un profesional para un tipo de cita en un dia (yyyy-MM-dd). */
+    fun saludAvailability(tenantId: Long, conversationId: Long, professionalId: Long, date: String, typeId: Long): SaludAvailability? =
+        throw ErpException("saludAvailability no implementado")
+
+    /** Citas entre dos instantes ISO; de un paciente si viene `patientId`. */
+    fun saludAppointments(tenantId: Long, conversationId: Long, patientId: Long?, from: String, to: String): List<SaludAppointment> =
+        throw ErpException("saludAppointments no implementado")
+
+    fun saludAppointment(tenantId: Long, conversationId: Long, appointmentId: Long): SaludAppointment? =
+        throw ErpException("saludAppointment no implementado")
+
+    fun saludCreateAppointment(tenantId: Long, conversationId: Long, cita: SaludAppointmentWrite): SaludAppointment =
+        throw ErpException("saludCreateAppointment no implementado")
+
+    fun saludReschedule(tenantId: Long, conversationId: Long, appointmentId: Long, cambio: SaludRescheduleWrite): SaludAppointment =
+        throw ErpException("saludReschedule no implementado")
+
+    /** confirmada | cancelada (lo unico que el ERP le deja hacer al asistente). */
+    fun saludChangeStatus(tenantId: Long, conversationId: Long, appointmentId: Long, cambio: SaludStatusWrite): SaludAppointment =
+        throw ErpException("saludChangeStatus no implementado")
+
+    /** Lo que contesto el paciente al recordatorio de un control (mejor, igual, peor). */
+    fun saludFollowUpFeedback(tenantId: Long, conversationId: Long, followUpId: Long, respuesta: SaludFeedbackWrite): SaludFeedbackResult =
+        throw ErpException("saludFollowUpFeedback no implementado")
+
+    /** Clientes que coinciden con el telefono, marcando cuales ya son pacientes. */
+    fun saludCandidates(tenantId: Long, conversationId: Long, query: String): List<SaludCandidate> =
+        throw ErpException("saludCandidates no implementado")
+
+    fun saludCreatePatient(tenantId: Long, conversationId: Long, alta: SaludPatientCreate): SaludPatientDetail =
+        throw ErpException("saludCreatePatient no implementado")
+
+    fun saludPatientFromClient(tenantId: Long, conversationId: Long, clientId: Long, alta: SaludPatientFromClient): SaludPatientDetail =
+        throw ErpException("saludPatientFromClient no implementado")
 }

@@ -27,6 +27,18 @@ sealed interface WhatsAppOutbound {
 
     /** Imagen ya subida a Meta (el render del diseño), con un pie opcional. */
     data class Image(val mediaId: String, val caption: String?) : WhatsAppOutbound
+
+    /**
+     * Plantilla aprobada en Meta: lo unico que se puede mandar fuera de la
+     * ventana de 24 h. `variables` llena los {{n}} del cuerpo en orden y
+     * `respuestas` son los payloads de sus botones de respuesta rapida.
+     */
+    data class Template(
+        val name: String,
+        val language: String,
+        val variables: List<String>,
+        val respuestas: List<String> = emptyList(),
+    ) : WhatsAppOutbound
 }
 
 /**

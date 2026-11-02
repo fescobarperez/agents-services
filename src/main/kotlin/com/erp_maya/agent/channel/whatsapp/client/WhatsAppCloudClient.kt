@@ -112,6 +112,7 @@ open class WhatsAppCloudClient(
             type = "image",
             image = WaSendImage(m.mediaId, m.caption?.take(LARGO_PIE_IMAGEN)),
         )
+        is WhatsAppOutbound.Template -> WaSendRequest(to = to, type = "template", template = plantilla(m))
     }
 
     /**
@@ -255,7 +256,61 @@ data class WaSendRequest(
     @Nullable val document: WaSendDocument? = null,
     @Nullable val sticker: WaSendMedia? = null,
     @Nullable val image: WaSendImage? = null,
+    @Nullable val template: WaSendTemplate? = null,
 )
+
+/**
+ * Una plantilla aprobada: el cuerpo con sus variables y, si tiene botones de
+ * respuesta rapida, el payload de cada uno (llega de vuelta en el webhook).
+ */
+@Serdeable
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class WaSendTemplate(
+    val name: String,
+    val language: WaSendLanguage,
+    @Nullable val components: List<WaSendComponent>? = null,
+)
+
+@Serdeable
+data class WaSendLanguage(val code: String)
+
+@Serdeable
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class WaSendComponent(
+    val type: String,
+    @JsonProperty("sub_type") @Nullable val subType: String? = null,
+    @Nullable val index: String? = null,
+    val parameters: List<WaSendParameter>,
+)
+
+@Serdeable
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class WaSendParameter(
+    val type: String,
+    @Nullable val text: String? = null,
+    @Nullable val payload: String? = null,
+)
+
+/** El cuerpo de la plantilla y sus botones de respuesta rapida, como los pide Meta. */
+internal fun plantilla(m: WhatsAppOutbound.Template): WaSendTemplate {
+    val cuerpo = m.variables.takeIf { it.isNotEmpty() }?.let { vars ->
+        // Meta rechaza un parametro vacio: se manda un guion en su lugar.
+        WaSendComponent(type = "body", parameters = vars.map { WaSendParameter(type = "text", text = it.ifBlank { "-" }) })
+    }
+    val botones = m.respuestas.mapIndexed { i, payload ->
+        WaSendComponent(
+            type = "button",
+            subType = "quick_reply",
+            index = i.toString(),
+            parameters = listOf(WaSendParameter(type = "payload", payload = payload)),
+        )
+    }
+    return WaSendTemplate(
+        name = m.name,
+        language = WaSendLanguage(m.language),
+        components = (listOfNotNull(cuerpo) + botones).takeIf { it.isNotEmpty() },
+    )
+}
 
 /** El `text` de un mensaje de texto: `{"body": "..."}`. */
 /** Meta no reconocio el numero o no respondio. `tipo`: sin token, rechazado o sin respuesta. */
