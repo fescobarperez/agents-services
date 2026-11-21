@@ -1,5 +1,8 @@
 package com.erp_maya.agent.prompt.service
 
+import com.erp_maya.agent.playbook.domain.Playbook
+import com.erp_maya.agent.playbook.domain.Confirmaciones
+import com.erp_maya.agent.playbook.domain.Estilo
 import com.erp_maya.agent.context.domain.AgentRef
 import com.erp_maya.agent.context.domain.Capabilities
 import com.erp_maya.agent.context.domain.ChannelRef
@@ -151,4 +154,72 @@ class PromptBuilderTest {
         },
         policy = TenantPolicy(1, true, BigDecimal("25000"), null, "cercano", "es-GT"),
     )
+
+    @Test
+    fun `las confirmaciones del prompt salen del playbook`() {
+        val porDefecto = builder.confirmaciones(Playbook())
+        assertTrue(porDefecto.contains("ya es su decision"))
+        assertTrue(porDefecto.contains("resumen final"))
+        assertTrue(porDefecto.contains("UN solo resumen"))
+        assertTrue(porDefecto.contains("cotizacion.rechazar sin volver a preguntar"))
+
+        val estricto = builder.confirmaciones(
+            Playbook(confirmaciones = Confirmaciones(
+                repreguntarDatos = true, medidasFoto = Confirmaciones.MEDIDAS_APARTE, aprobarDiseno = Confirmaciones.DISENO_LITERAL,
+                rechazarTexto = true, enviar = false, instrucciones = "Nunca preguntes el color dos veces.",
+            )),
+        )
+        assertTrue(estricto.contains("confirmalo antes de anotarlo"))
+        assertTrue(estricto.contains("cotizacion.confirmar_medidas"))
+        assertTrue(estricto.contains("responda que si"))
+        assertTrue(estricto.contains("sin pedir confirmacion"))
+        assertTrue(estricto.contains("Nunca preguntes el color dos veces."))
+    }
+
+    @Test
+    fun `envio y reapertura sin valor propio heredan lo que ya estaba`() {
+        val viejo = Playbook()
+        assertTrue(viejo.confirmarEnvio())
+        assertTrue(viejo.confirmarReapertura())
+        val nuevo = Playbook(confirmaciones = Confirmaciones(enviar = false, reabrir = false))
+        assertFalse(nuevo.confirmarEnvio())
+        assertFalse(nuevo.confirmarReapertura())
+    }
+
+    @Test
+    fun `el estilo sale del playbook y por defecto es breve y sin repetir`() {
+        val porDefecto = builder.estilo(Playbook())
+        assertTrue(porDefecto.contains("unas 3 lineas"))
+        assertTrue(porDefecto.contains("No repitas lo que ya se dijo"))
+        assertTrue(porDefecto.contains("Sin listas"))
+        assertTrue(porDefecto.contains("Nunca hables del sistema"))
+
+        val libre = builder.estilo(Playbook(estilo = Estilo(largo = Estilo.LARGO_DETALLADO, repetirResumen = true,
+            unTema = false, sinListas = false, instrucciones = "Saluda por el nombre.")))
+        assertFalse(libre.contains("No repitas"))
+        assertFalse(libre.contains("Sin listas"))
+        assertTrue(libre.contains("con detalle"))
+        assertTrue(libre.contains("Saluda por el nombre."))
+        // Las reglas fijas van siempre.
+        assertTrue(libre.contains("nunca le pidas que contacte a la empresa"))
+    }
+
+    @Test
+    fun `conversa sin narrar el proceso y pide los datos del cliente al final`() {
+        val porDefecto = builder.estilo(Playbook())
+        assertTrue(porDefecto.contains("No narres lo que haces"))
+        assertTrue(porDefecto.contains("al final"))
+        assertTrue(porDefecto.contains("cotizacion.agregar"))
+
+        val alInicio = builder.estilo(Playbook(estilo = Estilo(pedirDatos = Estilo.PEDIR_AL_INICIO)))
+        assertTrue(alInicio.contains("al inicio, antes de cotizar"))
+        assertFalse(alInicio.contains("al final"))
+    }
+
+    @Test
+    fun `con un tema por mensaje lo que falta se pregunta de a uno`() {
+        assertTrue(builder.confirmaciones(Playbook()).contains("pregunta solo lo siguiente"))
+        val junto = builder.confirmaciones(Playbook(estilo = Estilo(unTema = false)))
+        assertTrue(junto.contains("pidelo junto"))
+    }
 }

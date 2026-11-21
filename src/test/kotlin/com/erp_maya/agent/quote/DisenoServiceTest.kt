@@ -9,6 +9,7 @@ import com.erp_maya.agent.context.domain.PromptRef
 import com.erp_maya.agent.context.domain.TenantPolicy
 import com.erp_maya.agent.erp.client.ErpDePruebas
 import com.erp_maya.agent.erp.domain.Dimensions
+import com.erp_maya.agent.playbook.domain.Confirmaciones
 import com.erp_maya.agent.playbook.domain.CotizacionConfig
 import com.erp_maya.agent.playbook.domain.Playbook
 import com.erp_maya.agent.playbook.domain.ProductosNuevos
@@ -48,7 +49,7 @@ class DisenoServiceTest {
     }
 
     @Test
-    fun `cambiar las medidas vuelve a pedir confirmacion; lo demas se conserva`() {
+    fun `cambiar las medidas vuelve a pedir confirmacion, lo demas se conserva`() {
         val confirmada = conFicha(pergola, confirmadas = true, material = "pino")
         val otra = Dimensions(d("2.5"), d("3"), d("5"))
         val f = servicio.actualizar(confirmada, null, null, null, "caoba", otra, "foto", null).borrador!!.diseno!!
@@ -65,13 +66,21 @@ class DisenoServiceTest {
     }
 
     @Test
-    fun `no se agregan a la cotizacion las medidas de la foto sin confirmar`() {
+    fun `en modo aparte no se agregan las medidas de la foto sin confirmar`() {
         val b = conFicha(pergola, confirmadas = false)
-        assertThrows(IllegalArgumentException::class.java) { DisenoService.validarAgregar(b, pergola) }
+        assertThrows(IllegalArgumentException::class.java) { DisenoService.validarAgregar(b, pergola, aparte) }
         // Otras medidas (las que el cliente dijo) si pasan, y sin medidas tambien.
-        DisenoService.validarAgregar(b, Dimensions(d("2"), d("3"), d("4")))
-        DisenoService.validarAgregar(b, null)
-        DisenoService.validarAgregar(conFicha(pergola, confirmadas = true), pergola)
+        DisenoService.validarAgregar(b, Dimensions(d("2"), d("3"), d("4")), aparte)
+        DisenoService.validarAgregar(b, null, aparte)
+        DisenoService.validarAgregar(conFicha(pergola, confirmadas = true), pergola, aparte)
+    }
+
+    @Test
+    fun `en modo resumen o no las medidas de la foto pasan sin paso aparte`() {
+        val b = conFicha(pergola, confirmadas = false)
+        // Por defecto (resumen) se confirman junto con el envio.
+        DisenoService.validarAgregar(b, pergola, Playbook())
+        DisenoService.validarAgregar(b, pergola, Playbook(confirmaciones = Confirmaciones(medidasFoto = Confirmaciones.MEDIDAS_NO)))
     }
 
     @Test
@@ -81,34 +90,34 @@ class DisenoServiceTest {
     }
 
     @Test
-    fun `producto nuevo solo si el playbook lo permite y en sus lineas`() {
+    fun `producto nuevo se crea siempre que el agente tenga la herramienta`() {
         val b = conFicha(pergola, confirmadas = true)
-        assertThrows(IllegalArgumentException::class.java) {
-            servicio.productoNuevo(contexto(), 1, b, Playbook(), "Pergola a 1 agua", "Pergolas")
-        }
-        val conLineas = playbook(ProductosNuevos(permitido = true, lineas = listOf("Pérgolas", "Decks")))
-        assertThrows(IllegalArgumentException::class.java) {
-            servicio.productoNuevo(contexto(), 1, b, conLineas, "Lampara", "Iluminacion")
-        }
-        assertTrue(erp.propuestas.isEmpty())
-
-        val paso = servicio.productoNuevo(contexto(), 1, b, conLineas, "Pergola a 1 agua", "pergolas")
+        // Ni el switch del playbook ni las lineas lo frenan: la venta siempre se abre.
+        val paso = servicio.productoNuevo(contexto(), 1, b, Playbook(), "Pergola a 1 agua", "Pergolas")
         assertEquals("pendiente_revision", paso.datos["estado"])
-        val propuesta = erp.propuestas.single()
+        servicio.productoNuevo(contexto(), 1, b, playbook(ProductosNuevos(lineas = listOf("Decks"))), "Lampara", "Iluminacion")
+        // Con el nombre basta.
+        servicio.productoNuevo(contexto(), 1, b, Playbook(), "Mueble para consolas", null)
+        assertEquals(3, erp.propuestas.size)
+        val propuesta = erp.propuestas.first()
         assertEquals(0, d("4.5").compareTo(propuesta.depth))
         assertTrue(propuesta.notes!!.contains("Pergola"))
+        assertNull(erp.propuestas.last().category)
         val f = paso.borrador!!.diseno!!
         assertTrue(f.productoPendiente)
         assertEquals(paso.datos["productId"], f.productoId)
     }
 
     @Test
-    fun `no se propone un producto con medidas sin confirmar`() {
+    fun `no se propone un producto con medidas sin confirmar en modo aparte`() {
         val conLineas = playbook(ProductosNuevos(permitido = true))
         assertThrows(IllegalArgumentException::class.java) {
-            servicio.productoNuevo(contexto(), 1, conFicha(pergola, confirmadas = false), conLineas, "Pergola", "Pergolas")
+            servicio.productoNuevo(contexto(), 1, conFicha(pergola, confirmadas = false), conLineas.copy(confirmaciones = aparte.confirmaciones), "Pergola", "Pergolas")
         }
         assertTrue(erp.propuestas.isEmpty())
+        // En modo resumen (por defecto) si se propone: se confirma en el resumen final.
+        servicio.productoNuevo(contexto(), 1, conFicha(pergola, confirmadas = false), conLineas, "Pergola", "Pergolas")
+        assertEquals(1, erp.propuestas.size)
     }
 
     @Test
@@ -122,6 +131,8 @@ class DisenoServiceTest {
     fun `cerrar la cotizacion olvida la ficha`() {
         assertNull(conFicha(pergola, confirmadas = true).cerrar("enviada").diseno)
     }
+
+    private val aparte = Playbook(confirmaciones = Confirmaciones(medidasFoto = Confirmaciones.MEDIDAS_APARTE))
 
     private fun conFicha(m: Dimensions, confirmadas: Boolean, material: String? = null) = QuoteDraft(
         diseno = FichaDiseno(tipo = "Pergola", material = material, medidas = m,

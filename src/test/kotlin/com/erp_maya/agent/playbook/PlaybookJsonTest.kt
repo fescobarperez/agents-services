@@ -29,7 +29,7 @@ class PlaybookJsonTest {
              }}
             """.trimIndent(),
             Playbook::class.java,
-        )
+        )!! // readValue es @Nullable en Java
         assertEquals("vendedor", p.audiencia("erp"))
         assertEquals(0, BigDecimal("25000").compareTo(p.limites.montoMaximo))
         assertEquals(listOf("direccion_entrega", "fecha_entrega"), p.cotizacion.datosDelCliente().map { it.clave })

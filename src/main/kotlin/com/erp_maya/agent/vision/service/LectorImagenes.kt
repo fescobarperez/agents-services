@@ -150,7 +150,7 @@ open class LectorImagenes(
     private fun notaFinal(descritas: List<String>, noAbiertas: Int, ignoradas: Int, maximo: Int): String = buildString {
         if (descritas.isNotEmpty()) {
             append("[Lectura automatica de las fotos que acaba de mandar el cliente. Las medidas son estimadas: ")
-            append("confirmalas con el cliente antes de usarlas en la cotizacion.]\n")
+            append("tratalas segun la regla de confirmaciones.]\n")
             descritas.forEachIndexed { i, d -> append(i + 1).append(") ").append(d.removePrefix("$MARCA_FOTO ")).append('\n') }
         }
         if (noAbiertas > 0) {

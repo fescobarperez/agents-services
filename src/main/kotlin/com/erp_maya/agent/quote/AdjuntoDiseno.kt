@@ -1,5 +1,7 @@
 package com.erp_maya.agent.quote
 
+import com.erp_maya.agent.channel.web.WebMediaRepository
+import com.erp_maya.agent.channel.whatsapp.client.MediaDescargada
 import com.erp_maya.agent.channel.whatsapp.client.WhatsAppCloudClient
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.client.ErpClient
@@ -28,10 +30,16 @@ open class AdjuntoDiseno(
     private val resultados: ResultadosRender,
     private val whatsapp: WhatsAppCloudClient,
     private val erp: ErpClient,
+    /** Los renders del chat web viven aqui y no en Meta. */
+    private val web: WebMediaRepository? = null,
 ) {
 
     /** `confirmado` sale del mensaje del cliente en ESTE turno, no del modelo. */
-    open fun aprobar(contexto: ExecutionContext, conversationId: Long, actual: QuoteDraft?, confirmado: Boolean): DraftStep {
+    open fun aprobar(
+        contexto: ExecutionContext, conversationId: Long, actual: QuoteDraft?, confirmado: Boolean,
+        /** Las medidas estimadas se confirman en un paso propio (modo `aparte` del playbook). */
+        medidasAparte: Boolean = true,
+    ): DraftStep {
         val borrador = actual ?: throw IllegalArgumentException("No hay diseño en curso")
         val ficha = borrador.diseno ?: throw IllegalArgumentException("No hay diseño en curso")
         val renderId = ficha.ultimoRender
@@ -50,7 +58,7 @@ open class AdjuntoDiseno(
             actualizadaMs = System.currentTimeMillis(),
         )
         val resultado = adjuntarSiCorresponde(contexto, conversationId, conAprobado) ?: conAprobado
-        val pendienteMedidas = ficha.medidasSinConfirmar()
+        val pendienteMedidas = medidasAparte && ficha.medidasSinConfirmar()
         return DraftStep(
             borrador = resultado,
             mensaje = "Anoté que te gusta este diseño (imagen ${r.renderNumber} de ${r.renderMax}).",
@@ -76,7 +84,10 @@ open class AdjuntoDiseno(
         if (ficha.disenoAdjunto) return borrador
         return try {
             val r = resultados.resultado(renderId)
-            val imagen = r?.resultMediaId?.let { whatsapp.descargarMedia(it, ImagenService.MAX_BYTES) }
+            val imagen = r?.resultMediaId?.let {
+                if (WebMediaRepository.esWeb(it)) web?.leer(it)?.let { m -> MediaDescargada(m.bytes, m.mimeType) }
+                else whatsapp.descargarMedia(it, ImagenService.MAX_BYTES)
+            }
             erp.saveQuoteDesign(
                 contexto.tenantId, conversationId, quoteId,
                 QuoteDesignWrite(

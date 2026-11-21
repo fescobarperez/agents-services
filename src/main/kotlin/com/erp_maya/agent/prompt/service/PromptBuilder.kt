@@ -7,6 +7,7 @@ import com.erp_maya.agent.model.domain.ModelPrompt
 import com.erp_maya.agent.model.domain.PromptMessage
 import com.erp_maya.agent.model.domain.Role
 import com.erp_maya.agent.playbook.domain.DatoRequerido
+import com.erp_maya.agent.playbook.domain.Estilo
 import com.erp_maya.agent.playbook.domain.Playbook
 import com.erp_maya.agent.prompt.domain.SessionState
 import com.erp_maya.agent.quote.QuoteChecklist
@@ -113,10 +114,11 @@ class PromptBuilder {
             // En la web no hay numero de telefono que identifique a nadie.
             append(
                 "\n\nCanal: chat de la pagina web de la empresa. El visitante es anonimo. Atiende sus dudas sin pedirle " +
-                    "datos; cuando quiera una cotizacion o hablar con un asesor, pidele nombre y telefono (y NIT, CF si " +
-                    "no tiene) y registralo con cotizacion.cliente_nuevo mandando el telefono. Si dice que ya es cliente, " +
-                    "buscalo por telefono. Aqui no puedes enviar documentos ni imagenes: si te pide el PDF, dile que un " +
-                    "asesor se lo hara llegar.",
+                    "datos. Para la cotizacion le pides nombre y telefono (y NIT, CF si no tiene) en el momento que indica " +
+                    "tu estilo, y lo registras con cotizacion.cliente_nuevo mandando el telefono; si quiere hablar con un " +
+                    "asesor, pidele nombre y telefono. Si dice que ya es cliente, " +
+                    "buscalo por telefono. Aqui funciona igual que en WhatsApp: recibes fotos, puedes mandar imagenes de " +
+                    "ejemplo y el PDF de la cotizacion le llega en el chat para descargarlo.",
             )
         }
         // Los montos los calcula el ERP (impuesto, redondeo, descuentos). Un
@@ -175,19 +177,19 @@ class PromptBuilder {
             d.descripcion?.let { append(": ").append(it) }
             append('\n')
         }
-        if (c.envio.requiereConfirmacion) append("El cliente debe confirmar explicitamente antes de que envies la cotizacion.\n")
         append("Ciclo de una cotizacion: la armas mientras esta abierta; al enviarla pasa a revision y ya no la editas.\n")
         if (c.reapertura.permitida) {
             append("- Si el cliente quiere modificar una que ya envio y ningun asesor la tomo, puedes reabrirla (cotizacion.reabrir)")
-            if (c.reapertura.requiereConfirmacion) append(" tras confirmar con el cliente que quiere modificarla")
+            if (playbook.confirmarReapertura()) append(" tras confirmar con el cliente que quiere modificarla")
+            else append(": que pida cambiarla ya es su confirmacion")
             append(".\n")
         }
         append("- Si un asesor ya la tomo, no la tocas: registra cada cambio con cotizacion.solicitar_cambio y dile que el asesor le respondera.\n")
         append("- Descuentos, negociacion y cambios sobre cotizaciones en revision siempre van como solicitud; nunca los prometas.\n")
-        append("- Si un producto tiene medidas (dimensions), confirma si lo quiere en esa medida estandar o en otra y pasa las que pida en cotizacion.agregar. El sistema calcula el precio de la medida especial (precio_medida); si dice 'por cotizar', la linea queda sin precio y el asesor la cotiza: diselo al cliente y no inventes un monto.\n")
+        append("- Si un producto tiene medidas (dimensions) y el cliente no dijo cuales quiere, preguntale si la estandar u otra; si ya las dijo, usalas y pasalas en cotizacion.agregar. El sistema calcula el precio de la medida especial (precio_medida); si dice 'por cotizar', la linea queda sin precio y el asesor la cotiza: diselo al cliente y no inventes un monto.\n")
         if (playbook.imagenes.aceptar) {
             append("- Fotos: lo que el cliente manda en foto te llega como lectura en texto ([Foto del cliente] o 'Lectura automatica'). ")
-            append("Las medidas que salen de una foto son estimadas: confirmalas SIEMPRE con el cliente antes de pasarlas a cotizacion.agregar. ")
+            append("Las medidas que salen de una foto son estimadas (ver Confirmaciones). ")
             append("Si la lectura dice que es un documento personal, no repitas ni pidas sus datos.\n")
         }
         append("- Productos a la medida (pergolas, decks…): consulta cotizacion.plantilla. Si tiene plantilla, pide las medidas que indica, ofrece los paquetes y las opciones explicando su beneficio (sin decir costos), y cotiza con cotizacion.agregar_plantilla, no con cotizacion.agregar. Si no tiene, sigue como siempre.\n")
@@ -197,26 +199,110 @@ class PromptBuilder {
             append("(tipo, medidas, material, acabado y lo que aplique: aguas, cubierta, deck…) preguntando todo en un solo mensaje, ")
             append("y luego usa cotizacion.render. Maximo ").append(playbook.imagenes.rendersMax).append(" por cotizacion: no gastes una ")
             append("para preguntar. Cada ajuste: actualiza la ficha y pide otro render con el cambio. Cuando le guste, ")
-            append("usa cotizacion.aprobar_diseno, confirma las medidas y arma la cotizacion.\n")
+            append("usa cotizacion.aprobar_diseno y arma la cotizacion.\n")
         } else {
             append("- No generas imagenes de ejemplo: si las piden, ofrece describirlo o que un asesor comparta fotos de trabajos similares.\n")
         }
         val nuevos = c.productosNuevos
-        if (nuevos.permitido) {
-            append("- Si lo que pide no esta en el catalogo (buscalo antes con productos.search) y es de ")
-            append(if (nuevos.lineas.isEmpty()) "lo que vende la empresa" else "estas lineas: " + nuevos.lineas.joinToString(", "))
-            append(", registralo con cotizacion.producto_nuevo y agregalo con cotizacion.agregar: la linea queda por cotizar y el asesor confirma el precio.\n")
+        // Tener la herramienta es el permiso: nunca se cierra una venta por no
+        // tener el producto en el catalogo.
+        if (contexto.toolFor(TOOL_PRODUCTO_NUEVO) != null) {
+            append("- Si lo que pide no esta en el catalogo (buscalo antes con productos.search), registralo con cotizacion.producto_nuevo ")
+            append("(basta el nombre")
+            if (nuevos.lineas.isNotEmpty()) append("; categoria, si encaja, una de: ").append(nuevos.lineas.joinToString(", "))
+            append(") y agregalo con cotizacion.agregar como cualquier otro producto. Siempre abre la cotizacion: nunca dejes una venta sin empezar. ")
+            append("Hazlo sin anunciarlo: no le digas que no estaba en el catalogo, que no tiene precio ni que no puedes. ")
+            append("La linea queda por cotizar; solo al enviar la cotizacion dile que el asesor de ventas confirmara los precios.\n")
         } else {
-            append("- No creas productos fuera del catalogo. Si lo que pide no esta, ")
-            append(nuevos.mensajeFueraDeLinea?.let { "dile: «$it»" } ?: "dile que un asesor revisara su pedido y lo contactara")
+            append("- No creas productos fuera del catalogo. Si lo que pide no esta, no digas que no puedes ni hables del catalogo: ")
+            append(nuevos.mensajeFueraDeLinea?.let { "dile: «$it»" } ?: "dile que un asesor le escribe por aqui con el precio")
             append(".\n")
         }
         append("- Si pregunta por que se rechazo o ajusto algo: cotizacion.solicitudes y explica con el motivo y la respuesta del asesor, sin agregar razones propias. Si no le basta, cotizacion.consultar.\n")
         append("Decision del cliente sobre la cotizacion ENVIADA por su asesor (pendiente_decision=true en cotizacion.listar):\n")
-        append("- Normalmente decide con los botones Aprobar / Comentarios / Rechazar. Si lo dice por texto, confirma numero y total y usa cotizacion.aprobar o cotizacion.rechazar.\n")
+        append("- Normalmente decide con los botones Aprobar / Comentarios / Rechazar. Si lo dice por texto, usa cotizacion.aprobar o cotizacion.rechazar (ver Confirmaciones).\n")
         append("- El motivo del rechazo es opcional: no lo exijas ni insistas. Si lo cuenta despues de rechazar, cotizacion.motivo_rechazo.\n")
         append("- Comentarios u objeciones sobre una enviada van con cotizacion.solicitar_cambio (o tipo otro); el asesor responde.\n")
         append("- Tras aprobarla el proceso de cotizacion termino: agradece y di que un asesor lo contactara; no ofrezcas modificarla.\n")
+        append(confirmaciones(playbook))
+        append(estilo(playbook))
+    }
+
+    /**
+     * Como escribe. Lo configurable sale del playbook; las tres ultimas reglas
+     * van siempre: un cliente nunca deberia leer sobre errores del sistema ni
+     * que le ofrezcan algo que despues no se puede hacer.
+     */
+    internal fun estilo(playbook: Playbook): String = buildString {
+        val e = playbook.estilo
+        append("Estilo de tus mensajes (prevalece sobre la costumbre de explicar de mas):\n")
+        append(
+            when (e.largo.lowercase()) {
+                Estilo.LARGO_DETALLADO -> "- Puedes explicar con detalle cuando ayude, pero sin relleno.\n"
+                Estilo.LARGO_NORMAL -> "- Mensajes cortos: un parrafo, dos como maximo.\n"
+                else -> "- Mensajes breves y directos: unas 3 lineas. Ve al grano, sin introducciones ni despedidas largas.\n"
+            },
+        )
+        if (!e.repetirResumen) {
+            append("- No repitas lo que ya se dijo (productos, medidas, materiales, direccion, fechas). Di solo lo nuevo. ")
+            append("El resumen completo va una sola vez: antes de enviar la cotizacion, o si el cliente lo pide.\n")
+        }
+        if (e.unTema) append("- Un tema por mensaje y a lo mas una pregunta, al final. No mezcles otros pendientes si el cliente no los saco.\n")
+        if (e.sinListas) append("- Sin listas, viñetas ni encabezados: frases cortas.\n")
+        append("- Conversa como un asesor de la tienda: responde a lo que dijo el cliente y pregunta lo siguiente. No narres lo que haces, ")
+        append("lo que aun no has hecho ni por que necesitas un dato (\"todavia no he registrado nada\", \"para darle el precio necesito ")
+        append("armar la cotizacion\"). Ejemplo: si pide una pergola, \"¡Con gusto! ¿Qué medidas tiene el espacio donde la quiere?\"\n")
+        if (e.pedirDatos.equals(Estilo.PEDIR_AL_INICIO, ignoreCase = true)) {
+            append("- Datos del cliente: pide nombre y NIT (CF si no tiene) al inicio, antes de cotizar, en una sola pregunta corta.\n")
+        } else {
+            append("- Datos del cliente: primero entiende que quiere (producto, medidas, material) y anotalo con cotizacion.agregar, que lo ")
+            append("guarda en espera aunque aun no haya cliente. Pide nombre, telefono y NIT (CF si no tiene) al final: cuando ya este ")
+            append("definido lo que lleva, o si pide el total o el PDF. En una sola pregunta corta, sin explicar para que.\n")
+        }
+        append("- Nunca hables del sistema ni de errores (\"no quedo registrado\", \"el sistema no me lo permitio\"). Di que sigue, en positivo.\n")
+        append("- No ofrezcas una accion que no puedes hacer con tus herramientas. Si algo no lo puedes resolver, di que un asesor le escribe por aqui; ")
+        append("nunca le pidas que contacte a la empresa: ya esta hablando con ella.\n")
+        e.instrucciones?.takeIf { it.isNotBlank() }?.let { append("- ").append(it.trim()).append('\n') }
+    }
+
+    /**
+     * Cuanto pregunta el agente. Sale del playbook, igual que las compuertas
+     * del codigo, para que prompt y codigo nunca digan cosas distintas.
+     */
+    internal fun confirmaciones(playbook: Playbook): String = buildString {
+        val k = playbook.confirmaciones
+        append("Confirmaciones (esto prevalece sobre cualquier otra indicacion de confirmar o de preguntar de a un dato):\n")
+        if (k.repreguntarDatos) {
+            append("- Cuando el cliente te de un dato (color, material, medida, cantidad, opcion), confirmalo antes de anotarlo.\n")
+        } else {
+            append("- Lo que el cliente dice con sus palabras (color, material, medidas, cantidad, opciones) ya es su decision: ")
+            append("anotalo con la herramienta y sigue. No lo repitas para que lo confirme. Pregunta solo si es ambiguo o se ")
+            append("contradice con algo anterior. ")
+            append(
+                if (playbook.estilo.unTema) "Si falta algo, pregunta solo lo siguiente que necesitas, en una pregunta corta.\n"
+                else "Lo que falte, pidelo junto en un solo mensaje.\n",
+            )
+        }
+        when {
+            k.medidasAparte -> append("- Medidas estimadas de una foto: muestraselas y confirmalas con cotizacion.confirmar_medidas antes de usarlas.\n")
+            k.medidasSinConfirmacion -> append("- Medidas estimadas de una foto: usalas como referencia sin pedir confirmacion; el asesor las verifica.\n")
+            else -> append("- Medidas estimadas de una foto: usalas sin preguntar aparte y marcalas como estimadas en el resumen final; esa confirmacion las cubre.\n")
+        }
+        if (k.disenoFlexible) {
+            append("- Diseño de la imagen de ejemplo: si el cliente dice que le gusta (\"me gusta\", \"asi esta bien\", \"ese\"), apruebalo con cotizacion.aprobar_diseno sin volver a preguntar.\n")
+        } else {
+            append("- Diseño de la imagen de ejemplo: apruebalo solo cuando el cliente responda que si.\n")
+        }
+        if (playbook.confirmarEnvio()) {
+            append("- Antes de enviar la cotizacion: UN solo resumen con todo (productos, cantidades, opciones y medidas) y una sola pregunta para enviarla. Es la unica confirmacion general.\n")
+        } else {
+            append("- Con el checklist completo, envia la cotizacion sin pedir confirmacion.\n")
+        }
+        append(if (k.aprobarTexto) "- Aprobar por texto una cotizacion enviada: confirma numero y total antes de usar cotizacion.aprobar.\n"
+            else "- Aprobar por texto: si el cliente lo dice claro, usa cotizacion.aprobar sin volver a preguntar.\n")
+        append(if (k.rechazarTexto) "- Rechazar por texto: confirma antes de usar cotizacion.rechazar.\n"
+            else "- Rechazar por texto: si el cliente lo dice claro, usa cotizacion.rechazar sin volver a preguntar.\n")
+        k.instrucciones?.takeIf { it.isNotBlank() }?.let { append("- ").append(it.trim()).append('\n') }
     }
 
     private fun avisoReciente(a: com.erp_maya.agent.prompt.domain.AvisoCambios): String = buildString {
@@ -257,7 +343,7 @@ class PromptBuilder {
         append("Cotizacion en curso:\n")
         val cliente = when {
             b?.customerName != null -> "${b.customerName} (customerId ${b.customerId}); ya identificado, no le pidas sus datos"
-            b?.telefonoRevisado == true -> "no registrado con este numero; pide nombre y NIT (CF si no tiene) y registralo con cotizacion.cliente_nuevo"
+            b?.telefonoRevisado == true -> "no registrado con este numero; pide nombre y NIT (CF si no tiene) cuando lo indique tu estilo y registralo con cotizacion.cliente_nuevo"
             else -> "sin definir"
         }
         append("- cliente: ").append(cliente).append('\n')
@@ -306,7 +392,10 @@ class PromptBuilder {
     }
 
     private fun herramientas(contexto: ExecutionContext): String? {
-        val visibles = contexto.tools.filter { it.pattern !in ToolCatalog.SOLO_WHATSAPP || ToolCatalog.conStickers(contexto) }
+        val visibles = contexto.tools.filter {
+            (it.pattern !in ToolCatalog.SOLO_WHATSAPP || ToolCatalog.conStickers(contexto)) &&
+                (it.pattern !in ToolCatalog.CON_CLIENTE || ToolCatalog.conCliente(contexto))
+        }
         if (visibles.isEmpty()) return null
         val listado = visibles.joinToString("\n") { t ->
             val tope = t.maxAmount?.let { " (tope $it)" } ?: ""
@@ -326,6 +415,7 @@ class PromptBuilder {
     }
 
     companion object {
+        private const val TOOL_PRODUCTO_NUEVO = "cotizacion.producto_nuevo"
         /** Cuantos mensajes previos entran al prompt. */
         const val VENTANA = 8
 

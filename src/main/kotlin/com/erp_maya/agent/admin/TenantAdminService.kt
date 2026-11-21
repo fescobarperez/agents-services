@@ -58,7 +58,7 @@ open class TenantAdminService(
             agents = agentes,
             webChannels = repo.webChannels(tenantId).map {
                 WebChannelView(it.id, it.name, it.publicKey, it.origins, it.title, it.greeting, it.color, it.active,
-                    it.tenantAgentId, it.createdAt.toString())
+                    it.tenantAgentId, it.createdAt.toString(), it.showPrices)
             },
             widgetScriptUrl = scriptUrl,
         )
@@ -147,7 +147,7 @@ open class TenantAdminService(
 
     // ── widgets web (canal `web`) ───────────────────────────────────────────
 
-    /** Crea un widget: {name, allowedOrigins, title?, greeting?, color?, tenantAgentId?}. */
+    /** Crea un widget: {name, allowedOrigins, title?, greeting?, color?, showPrices?, tenantAgentId?}. */
     @Transactional
     open fun createWebChannel(tenantId: Long, body: Map<String, Any?>): TenantAiView {
         val (draft, f) = WebChannelRules.validar(body, null)
@@ -166,7 +166,7 @@ open class TenantAdminService(
     open fun updateWebChannel(tenantId: Long, channelId: Long, body: Map<String, Any?>): TenantAiView {
         val w = repo.webChannels(tenantId).firstOrNull { it.id == channelId }
             ?: throw AdminException.notFound("El widget no existe en esta empresa")
-        val (draft, errores) = WebChannelRules.validar(body, WebChannelRules.Draft(w.name, w.origins, w.title, w.greeting, w.color))
+        val (draft, errores) = WebChannelRules.validar(body, WebChannelRules.Draft(w.name, w.origins, w.title, w.greeting, w.color, w.showPrices))
         val activo = if (body.containsKey("active")) Parse.bool(body["active"]).also { if (it == null) errores["active"] = "Valor inválido" } else null
         val agente = agenteParaCanal(tenantId, body, errores)
         if (draft == null || errores.isNotEmpty()) throw AdminException.validation(errores)

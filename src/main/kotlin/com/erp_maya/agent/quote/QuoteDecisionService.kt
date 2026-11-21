@@ -122,7 +122,7 @@ open class QuoteDecisionService(
             return DraftStep(actual, llenar(t.vencida, q), datos = mapOf("vencida" to true,
                 "instruccion" to "Dile al cliente exactamente el mensaje. No la apruebes."))
         }
-        if (!confirmado) {
+        if (playbooks.para(contexto).confirmaciones.aprobarTexto && !confirmado) {
             throw ErpException("El cliente aún no confirmó. Pregúntale: \"${llenar(t.confirmarAprobar, q)}\" " +
                 "y llama de nuevo cuando responda que sí. No es un error técnico ni lo reintentes en este turno.")
         }
@@ -141,7 +141,7 @@ open class QuoteDecisionService(
     ): DraftStep {
         val t = playbooks.para(contexto).mensajes.decision
         val q = enviadaDelCliente(contexto, conversationId, actual, quoteId)
-        if (!confirmado) {
+        if (playbooks.para(contexto).confirmaciones.rechazarTexto && !confirmado) {
             throw ErpException("El cliente aún no confirmó. Pregúntale: \"${llenar(t.confirmarRechazar, q)}\" " +
                 "y llama de nuevo cuando responda que sí. No es un error técnico ni lo reintentes en este turno.")
         }

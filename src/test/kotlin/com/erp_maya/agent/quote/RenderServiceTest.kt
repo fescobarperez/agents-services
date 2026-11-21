@@ -63,10 +63,11 @@ class RenderServiceTest {
     }
 
     @Test
-    fun `los ajustes salen sobre la misma foto del render anterior`() {
+    fun `los ajustes salen sobre la foto mas reciente con el cambio pedido`() {
+        // La foto del render anterior puede haber vencido en Meta: siempre la mas reciente.
         val segunda = QuoteDraft(diseno = ficha.copy(renders = 1, fotoRender = "m-1"))
         servicio.solicitar(contexto(), 7, segunda, conRenders, fotos, "502", null, "más oscura")
-        assertEquals("m-1", cola.pedidos.single().baseMediaId)
+        assertEquals("m-2", cola.pedidos.single().baseMediaId)
         assertTrue(cola.pedidos.single().prompt.contains("más oscura"))
     }
 
@@ -105,6 +106,15 @@ class RenderServiceTest {
         assertTrue(texto.contains("zona marcada en verde"))
         assertTrue(texto.contains("No agregues muebles"))
         assertFalse(texto.contains("[Foto del cliente]"))
+    }
+
+    @Test
+    fun `sin numero usa la foto mas reciente aunque el render anterior usara otra`() {
+        assertEquals("m-2", RenderService.elegirFoto(fotos, null, null).mediaId)
+        // El cliente mando m-2 despues del render sobre m-1: manda la nueva.
+        assertEquals("m-2", RenderService.elegirFoto(fotos, null, "m-1").mediaId)
+        // El render anterior ya era sobre la mas nueva: se reusa la misma.
+        assertEquals("m-2", RenderService.elegirFoto(fotos, null, "m-2").mediaId)
     }
 
     @Test

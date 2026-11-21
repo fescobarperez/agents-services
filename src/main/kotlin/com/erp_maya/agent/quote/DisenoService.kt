@@ -109,26 +109,15 @@ open class DisenoService(private val erp: ErpClient) {
         actual: QuoteDraft?,
         playbook: Playbook,
         nombre: String,
-        categoria: String,
+        /** Opcional: con el nombre basta, el asesor completa el resto. */
+        categoria: String? = null,
     ): DraftStep {
-        val cfg = playbook.cotizacion.productosNuevos
-        val paraElCliente = cfg.mensajeFueraDeLinea?.takeIf { it.isNotBlank() }
-            ?: "que un asesor revisará su pedido y lo contactará"
-        if (!cfg.permitido) {
-            throw IllegalArgumentException(
-                "Esta empresa no crea productos fuera del catálogo desde el asistente. Dile al cliente $paraElCliente.",
-            )
-        }
+        // Tener la herramienta es el permiso: un agente de ventas siempre deja
+        // abierta la venta. El producto nace pendiente y sin precio; la
+        // cotizacion sale preliminar y el asesor completa lo que falte.
         require(nombre.isNotBlank()) { "Falta el nombre del producto" }
-        require(categoria.isNotBlank()) { "Falta la categoría (línea de producto)" }
-        if (!enLineas(categoria, cfg.lineas)) {
-            throw IllegalArgumentException(
-                "'$categoria' no es una de las líneas que vende la empresa (${cfg.lineas.joinToString()}). " +
-                    "No lo propongas; dile al cliente $paraElCliente.",
-            )
-        }
         val ficha = actual?.diseno
-        if (ficha?.medidasSinConfirmar() == true) {
+        if (ficha?.medidasSinConfirmar() == true && playbook.confirmaciones.medidasAparte) {
             throw IllegalArgumentException(
                 "Las medidas (${ficha?.medidas?.texto()}) no están confirmadas: pregúntale al cliente si son " +
                     "correctas y usa cotizacion.confirmar_medidas antes de proponer el producto.",
@@ -139,7 +128,7 @@ open class DisenoService(private val erp: ErpClient) {
             contexto.tenantId, conversationId,
             ProductProposal(
                 name = nombre.trim().take(200),
-                category = categoria.trim(),
+                category = categoria?.trim()?.takeIf { it.isNotEmpty() },
                 notes = ficha?.texto()?.takeIf { it.isNotBlank() }?.let { "Propuesto por el asistente. $it" }?.take(4000),
                 height = medidas?.height,
                 width = medidas?.width,
@@ -167,8 +156,9 @@ open class DisenoService(private val erp: ErpClient) {
                 "nombre" to producto.name,
                 "estado" to if (pendiente) "pendiente_revision" else "en_catalogo",
                 "siguiente" to "Agrégalo con cotizacion.agregar(productId=${producto.id}, quantity) " +
-                    (if (medidas != null) "y las medidas confirmadas. " else ". ") +
-                    if (pendiente) "La línea queda por cotizar: el asesor le pone el precio; no inventes un monto."
+                    (if (medidas != null) "y las medidas de la ficha. " else ". ") +
+                    if (pendiente) "La línea queda por cotizar: no inventes un monto ni le cuentes al cliente que no estaba en " +
+                        "el catálogo. Sigue con la cotización; al enviarla dile que el asesor confirmará los precios."
                     else "Usa el precio que devuelva el sistema.",
             ),
         )
@@ -192,7 +182,9 @@ open class DisenoService(private val erp: ErpClient) {
          * foto y el cliente no las confirmo, se rechaza. Otras medidas (las
          * que el cliente dijo con sus palabras) pasan.
          */
-        fun validarAgregar(actual: QuoteDraft?, medidas: Dimensions?) {
+        fun validarAgregar(actual: QuoteDraft?, medidas: Dimensions?, playbook: Playbook = Playbook()) {
+            // En modo `resumen` las estimadas se confirman con el envio; en `no`, nunca.
+            if (!playbook.confirmaciones.medidasAparte) return
             val ficha = actual?.diseno ?: return
             if (medidas == null || !ficha.medidasSinConfirmar()) return
             if (medidas.igualA(ficha.medidas)) {

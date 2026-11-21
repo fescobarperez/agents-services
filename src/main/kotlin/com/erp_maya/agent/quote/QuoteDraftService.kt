@@ -95,8 +95,8 @@ open class QuoteDraftService(private val erp: ErpClient) {
             val nuevo = borrador.copy(pendientes = pendientes)
             return DraftStep(
                 borrador = nuevo,
-                mensaje = "Anoté ${cantidad.stripTrailingZeros().toPlainString()} × ${producto.name}. " +
-                    "¿Para qué cliente es la cotización? Indique nombre o NIT.",
+                // Sin pregunta: cuando pedir los datos del cliente lo decide el estilo del playbook.
+                mensaje = "Anotado ${cantidad.stripTrailingZeros().toPlainString()} × ${producto.name}, en espera hasta registrar al cliente.",
                 datos = mapOf("estado" to "falta_cliente", "lineas_en_espera" to pendientes.size),
             )
         }
@@ -286,7 +286,7 @@ open class QuoteDraftService(private val erp: ErpClient) {
             ?: throw ErpException("Ese producto no tiene plantilla de cálculo; cotízalo con cotizacion.agregar.")
         params.values.forEach { require(it.signum() > 0) { "Las medidas deben ser mayores que cero" } }
         val medidas = Dimensions.de(params["alto"], params["ancho"], params["profundidad"])
-        DisenoService.validarAgregar(borrador, medidas)
+        DisenoService.validarAgregar(borrador, medidas, playbook)
         val linea = TemplateItemWrite(p.id, params, choices, preset?.takeIf { it.isNotBlank() }, cantidad)
 
         val cotizacion = if (borrador.quoteId == null) {
@@ -672,7 +672,7 @@ open class QuoteDraftService(private val erp: ErpClient) {
         if (faltan.isNotEmpty()) {
             throw ErpException("Antes de enviarla falta: ${faltan.joinToString { it.etiqueta }}. Pídeselo al cliente.")
         }
-        if (playbook.cotizacion.envio.requiereConfirmacion && !confirmado) {
+        if (playbook.confirmarEnvio() && !confirmado) {
             throw ErpException(
                 "SIN_CONFIRMACION: el último mensaje del cliente no se reconoció como un sí claro. No es un error " +
                     "técnico: no lo digas así ni vuelvas a llamar esta herramienta en este turno. Sin repetir el " +

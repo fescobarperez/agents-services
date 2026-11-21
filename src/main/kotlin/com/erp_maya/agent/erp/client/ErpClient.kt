@@ -9,6 +9,9 @@ import com.erp_maya.agent.erp.domain.LeadAck
 import com.erp_maya.agent.erp.domain.LeadWrite
 import com.erp_maya.agent.erp.domain.ErpException
 import com.erp_maya.agent.erp.domain.ErpQuote
+import com.erp_maya.agent.erp.domain.ErpClientPrices
+import com.erp_maya.agent.erp.domain.ErpPreviewLine
+import com.erp_maya.agent.erp.domain.ErpPreviewPrices
 import com.erp_maya.agent.erp.domain.ErpChangeRequest
 import com.erp_maya.agent.erp.domain.ChangeRequestWrite
 import com.erp_maya.agent.erp.domain.ErpQuoteSummary
@@ -137,6 +140,14 @@ interface ErpClient {
 
     fun getQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote? =
         throw ErpException("getQuote no implementado")
+
+    /** Precios al cliente con los cargos dentro de cada producto (carrito del chat web). */
+    fun getClientPrices(tenantId: Long, conversationId: Long, quoteId: Long): ErpClientPrices? =
+        throw ErpException("getClientPrices no implementado")
+
+    /** Precios al cliente de productos en espera (aun sin cotizacion), con los cargos de la empresa dentro. */
+    fun previewClientPrices(tenantId: Long, conversationId: Long, lines: List<ErpPreviewLine>): ErpPreviewPrices? =
+        throw ErpException("previewClientPrices no implementado")
 
     /** Reemplaza las lineas: las que no vengan se eliminan; sin id son nuevas. */
     fun updateQuoteLines(tenantId: Long, conversationId: Long, quote: ErpQuote, lines: List<QuoteLineWrite>): ErpQuote =

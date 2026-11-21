@@ -129,9 +129,12 @@ open class AgentTurnService(
         // Fotos: se leen ANTES del bucle y llegan al modelo como texto. En el
         // historial la marca de cada foto se cambia por su lectura; la imagen
         // no se guarda en ningun lado.
-        // Solo el canal de WhatsApp manda fotos (por media id de Meta): un
-        // llamante externo no puede pedir que se baje media con nuestro token.
-        val fotosDelCanal = request.input.images?.takeIf { it.isNotEmpty() && contexto.channel.kind == CANAL_WHATSAPP }
+        // Solo WhatsApp (media id de Meta) y el chat web (web_media, ya
+        // validada por el canal) mandan fotos: un llamante externo no puede
+        // pedir que se baje media con nuestro token.
+        val fotosDelCanal = request.input.images?.takeIf {
+            it.isNotEmpty() && (contexto.channel.kind == CANAL_WHATSAPP || contexto.channel.kind == CANAL_WEB)
+        }
         val lectura = fotosDelCanal?.let { fotos ->
             lector.leer(contexto, playbook, fotos, request.input.text).also { r ->
                 r.lecturas.forEach { l ->
@@ -180,6 +183,7 @@ open class AgentTurnService(
         // resuelta: interpretar un "si" a partir de texto libre no es algo que
         // deba improvisar el codigo que autoriza una emision.
         val confirmado = confirmaciones.isConfirmation(request.input.text)
+        val aprobacion = confirmado || confirmaciones.isApproval(request.input.text)
 
         val salida = loop.run(
             contexto = contexto,
@@ -190,6 +194,7 @@ open class AgentTurnService(
             idempotencyKey = request.idempotencyKey,
             telefono = telefono,
             playbook = playbook,
+            aprobacion = aprobacion,
         )
 
         // Se audita SIEMPRE, con el modelo que de verdad respondio y no con el
@@ -334,12 +339,16 @@ open class AgentTurnService(
     ): List<FotoCliente> {
         if (nuevas.isNullOrEmpty()) return antes
         val ahora = System.currentTimeMillis()
+        // En la web varias fotos llegan en un mismo mensaje: su lectura se
+        // toma por posicion entre las de ese mensaje.
+        val vistas = mutableMapOf<String?, Int>()
         val agregadas = nuevas.map { f ->
+            val i = vistas.merge(f.messageId, 1, Int::plus)!! - 1
             FotoCliente(
                 mediaId = f.ref,
                 mimeType = f.mimeType,
                 messageId = f.messageId,
-                lectura = lectura?.lecturas?.firstOrNull { it.messageId == f.messageId }?.texto?.take(600),
+                lectura = lectura?.lecturas?.filter { it.messageId == f.messageId }?.getOrNull(i)?.texto?.take(600),
                 recibidaMs = ahora,
             )
         }
@@ -373,6 +382,7 @@ open class AgentTurnService(
         const val LIMITE_RAFAGA = 10
 
         const val CANAL_WHATSAPP = "whatsapp"
+        const val CANAL_WEB = "web"
         const val CANAL_ERP = "erp"
         const val ESCALADO_LIMITE = "AI_LIMIT"
         const val AVISO_LIMITE_INTERNO =

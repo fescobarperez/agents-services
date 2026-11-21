@@ -58,4 +58,21 @@ class ConfirmationDetectorTest {
         }
         assertFalse(detector.isConfirmation(null))
     }
+
+    @Test
+    fun `aprobar un diseño acepta como lo dice la gente`() {
+        listOf("me gusta", "Me encanta!", "así está bien", "ese me gusta mucho", "perfecto", "quedó bonito", "sí, ese")
+            .forEach { assertTrue(detector.isApproval(it), it) }
+    }
+
+    @Test
+    fun `aprobar un diseño no acepta matices ni negaciones`() {
+        listOf("no me gusta", "me gusta pero más alto", "¿me gusta?", "cambia el color", "me gusta el otro color azul")
+            .forEach { assertFalse(detector.isApproval(it), it) }
+    }
+
+    @Test
+    fun `me gusta no confirma un envio`() {
+        assertFalse(detector.isConfirmation("me gusta"))
+    }
 }

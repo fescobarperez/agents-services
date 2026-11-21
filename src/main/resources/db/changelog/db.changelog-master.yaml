@@ -40,3 +40,7 @@ databaseChangeLog:
       file: db/changelog/changes/17-whatsapp-consola.yaml
   - include:
       file: db/changelog/changes/18-plantillas-agente.yaml
+  - include:
+      file: db/changelog/changes/19-web-media.yaml
+  - include:
+      file: db/changelog/changes/20-web-carrito.yaml

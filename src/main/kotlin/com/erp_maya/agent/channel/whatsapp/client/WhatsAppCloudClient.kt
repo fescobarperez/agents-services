@@ -15,7 +15,23 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 /** No se pudo entregar un mensaje a WhatsApp. El consumidor decide si reintenta. */
-class WhatsAppSendException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+open class WhatsAppSendException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+/**
+ * Meta ya no tiene la media: vencio o se recibio con otra app o numero.
+ * Reintentar no sirve; hay que pedirle al cliente que la mande de nuevo.
+ */
+class MediaNoDisponibleException(val mediaId: String, detalle: String) :
+    WhatsAppSendException("Meta ya no tiene la media $mediaId: $detalle")
+
+/**
+ * Respuestas de la Graph API que significan "esa media ya no existe para
+ * nosotros": 404, o 400 con GraphMethodException ("does not exist, cannot be
+ * loaded due to missing permissions"). Un 401/403 o un 5xx no entran: son del
+ * token o de Meta y si vale la pena reintentar.
+ */
+internal fun esMediaNoDisponible(status: Int, cuerpo: String?): Boolean =
+    status == 404 || (status == 400 && cuerpo.orEmpty().contains("GraphMethodException"))
 
 /**
  * Envio a WhatsApp Cloud API: `POST /{phone_number_id}/messages`, y subida de
@@ -170,7 +186,9 @@ open class WhatsAppCloudClient(
             throw WhatsAppSendException("No se pudo contactar a la Graph API: ${e.javaClass.simpleName} ${e.message.orEmpty()}", e)
         }
         if (crudo.statusCode() !in 200..299) {
-            throw WhatsAppSendException("Meta no entrego la media $mediaId (${crudo.statusCode()}): ${crudo.body().orEmpty().take(300)}")
+            val detalle = "(${crudo.statusCode()}): ${crudo.body().orEmpty().take(300)}"
+            if (esMediaNoDisponible(crudo.statusCode(), crudo.body())) throw MediaNoDisponibleException(mediaId, detalle)
+            throw WhatsAppSendException("Meta no entrego la media $mediaId $detalle")
         }
         val meta = runCatching { json.readValue(crudo.body(), WaMediaInfo::class.java) }.getOrNull()
             ?: throw WhatsAppSendException("Meta respondio algo ilegible para la media $mediaId")
@@ -188,6 +206,7 @@ open class WhatsAppCloudClient(
             throw WhatsAppSendException("No se pudo bajar la media $mediaId: ${e.javaClass.simpleName}", e)
         }
         if (archivo.statusCode() !in 200..299) {
+            if (archivo.statusCode() == 404) throw MediaNoDisponibleException(mediaId, "la descarga respondio 404")
             throw WhatsAppSendException("Meta rechazo la descarga de la media $mediaId (${archivo.statusCode()})")
         }
         val bytes = archivo.body() ?: ByteArray(0)

@@ -31,6 +31,24 @@ class ConfirmationDetector {
         return palabras.all { it in AFIRMACIONES || it in VOCABULARIO } && palabras.any { it in AFIRMACIONES }
     }
 
+    /**
+     * Mas amplio que [isConfirmation]: el cliente aprueba algo que ya vio
+     * ("me gusta", "asi esta bien", "ese me encanta"). Mismo criterio cerrado:
+     * todas las palabras conocidas y al menos una que apruebe. "No me gusta" o
+     * "me gusta pero mas alto" no pasan ("no" y "pero" no estan en la lista).
+     * Solo para aprobar un diseño; enviar o aprobar una cotizacion siguen con
+     * [isConfirmation].
+     */
+    fun isApproval(entrada: String?): Boolean {
+        if (isConfirmation(entrada)) return true
+        val texto = entrada?.trim()?.lowercase() ?: return false
+        if (texto.isEmpty() || texto.length > LARGO_MAXIMO || '?' in texto) return false
+        val palabras = normalizar(texto).split(' ').filter { it.isNotBlank() }
+        if (palabras.isEmpty() || palabras.size > PALABRAS_MAXIMAS) return false
+        return palabras.all { it in AFIRMACIONES || it in VOCABULARIO || it in APROBACIONES || it in VOCABULARIO_APROBAR } &&
+            palabras.any { it in AFIRMACIONES || it in APROBACIONES }
+    }
+
     companion object {
         const val ID_CONFIRMAR = "confirm"
 
@@ -52,6 +70,18 @@ class ConfirmationDetector {
             "acuerdo", "adelante", "correcto", "claro", "perfecto", "bien", "procede", "va", "sale", "vale",
             "emitela", "enviala", "envialo", "enviasela", "enviaselo", "mandala", "mandalo", "mandasela",
             "mandaselo", "hazlo",
+        )
+
+        /** Palabras que aprueban algo que el cliente ya vio. */
+        private val APROBACIONES = setOf(
+            "gusta", "gusto", "encanta", "encanto", "fascina", "quedo", "queda", "bonito", "bonita", "lindo", "linda",
+            "hermoso", "hermosa", "bueno", "buena", "exacto", "justo", "ideal", "eso",
+        )
+
+        /** Lo que acompaña a una aprobacion: "ese", "asi", "mucho"... */
+        private val VOCABULARIO_APROBAR = setOf(
+            "ese", "esa", "este", "esto", "muy", "mucho", "nos", "le", "quiero", "queremos", "seria",
+            "lo", "quedaria", "igual", "como",
         )
 
         /** Lo que puede acompañar a una afirmacion sin cambiar su sentido. */

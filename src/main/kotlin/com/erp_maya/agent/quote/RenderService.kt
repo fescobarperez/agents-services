@@ -40,7 +40,11 @@ open class RenderService(private val trabajos: ColaRenders) {
                     "comparta fotos de trabajos similares.",
             )
         }
-        val destinatario = telefono ?: throw IllegalArgumentException("Las imágenes solo se envían por WhatsApp")
+        // En el chat web no hay telefono: el render se entrega a la sesion de
+        // la conversacion (la busca el consumidor).
+        val web = contexto.channel.accountRef.startsWith(PREFIJO_WEB)
+        val destinatario = telefono ?: if (web) DESTINO_WEB
+        else throw IllegalArgumentException("Las imágenes solo se envían por WhatsApp o por el chat web")
         if (fotos.isEmpty()) {
             throw IllegalArgumentException(
                 "No hay una foto del lugar. Pídele al cliente una foto de donde lo quiere (si puede, que marque la zona).",
@@ -89,6 +93,8 @@ open class RenderService(private val trabajos: ColaRenders) {
     }
 
     companion object {
+        const val PREFIJO_WEB = "web:"
+        const val DESTINO_WEB = "web"
         /** Lo minimo para un render que valga la pena. */
         internal fun faltantes(f: FichaDiseno): List<String> = listOfNotNull(
             "qué es (tipo)".takeIf { f.tipo.isNullOrBlank() },
@@ -96,15 +102,17 @@ open class RenderService(private val trabajos: ColaRenders) {
         )
 
         /**
-         * La foto pedida; si no se pidio, la del render anterior (para que los
-         * ajustes salgan sobre la misma), y si no, la mas nueva.
+         * La foto pedida; si no se pidio, la mas nueva. La del render anterior
+         * solo se reusa si sigue siendo la mas nueva (los ajustes salen sobre
+         * la misma foto); si el cliente mando otra despues, manda la nueva.
+         * Asi una foto vieja que ya no esta en Meta no se queda pegada.
          */
-        internal fun elegirFoto(fotos: List<FotoCliente>, numero: Int?, anterior: String?): FotoCliente {
+        internal fun elegirFoto(fotos: List<FotoCliente>, numero: Int?, @Suppress("UNUSED_PARAMETER") anterior: String?): FotoCliente {
             numero?.let { n ->
                 return fotos.getOrNull(n - 1)
                     ?: throw IllegalArgumentException("No hay foto $n; el cliente mandó ${fotos.size}")
             }
-            return fotos.firstOrNull { it.mediaId == anterior } ?: fotos.last()
+            return fotos.last()
         }
 
         /**

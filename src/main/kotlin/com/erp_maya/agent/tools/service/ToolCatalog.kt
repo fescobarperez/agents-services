@@ -138,11 +138,11 @@ class ToolCatalog {
             name = "cotizacion.producto_nuevo",
             mode = ToolMode.READ,
             description = "Registra un producto que el cliente pide y NO esta en el catalogo (buscalo antes con " +
-                "productos.search). Queda sin precio y pendiente de que un asesor lo revise; despues agregalo con " +
-                "cotizacion.agregar y la linea queda por cotizar. Solo si pertenece a las lineas que vende la empresa.",
+                "productos.search). Basta con el nombre: queda sin precio y pendiente de que un asesor lo complete; " +
+                "despues agregalo con cotizacion.agregar y la linea queda por cotizar.",
             parameters = listOf(
                 ToolParameter("nombre", "string", true, "Nombre corto del producto, p. ej. 'Pergola de madera a 1 agua'"),
-                ToolParameter("categoria", "string", true, "Linea de producto (categoria) a la que pertenece"),
+                ToolParameter("categoria", "string", false, "Linea de producto (categoria), si es clara; si no, omitela"),
             ),
         ),
         ToolDefinition(
@@ -153,7 +153,8 @@ class ToolCatalog {
                 "(tipo y medidas). Hay un limite de imagenes por cotizacion: junta todo antes de la primera. La imagen " +
                 "llega aparte en unos segundos.",
             parameters = listOf(
-                ToolParameter("foto", "integer", false, "Numero de la foto del lugar (1 = la primera que mando); si no, la del render anterior o la mas reciente"),
+                ToolParameter("foto", "integer", false, "Normalmente omitelo: se usa la foto mas reciente que mando el cliente. " +
+                    "Solo indicalo si el cliente pide expresamente una foto anterior (1 = la mas vieja que se recuerda)"),
                 ToolParameter("ajuste", "string", false, "El cambio que pidio el cliente respecto a la imagen anterior, si lo hay"),
             ),
         ),
@@ -183,7 +184,7 @@ class ToolCatalog {
             name = "cotizacion.reabrir",
             mode = ToolMode.READ,
             description = "Reabre una cotizacion que el cliente ya habia terminado para modificarla. Solo si " +
-                "cotizacion.listar dice puede_reabrirse=true y el cliente confirmo que quiere modificarla. Si un " +
+                "cotizacion.listar dice puede_reabrirse=true y el cliente quiere modificarla (ver Confirmaciones). Si un " +
                 "asesor ya la tomo, el sistema lo rechaza: usa cotizacion.solicitar_cambio.",
             parameters = listOf(ToolParameter("quoteId", "integer", true, "quoteId de cotizacion.listar")),
         ),
@@ -206,14 +207,14 @@ class ToolCatalog {
             name = "cotizacion.aprobar",
             mode = ToolMode.READ,
             description = "El cliente aprueba por texto la cotizacion que su asesor le ENVIO (estado enviada). " +
-                "Primero preguntale si confirma con numero y total; llamala cuando responda que si. El mensaje " +
+                "Si Confirmaciones lo pide, antes confirma numero y total. El mensaje " +
                 "que devuelve es el cierre: despues el proceso de cotizacion termino.",
             parameters = listOf(ToolParameter("quoteId", "integer", true, "quoteId de cotizacion.listar")),
         ),
         ToolDefinition(
             name = "cotizacion.rechazar",
             mode = ToolMode.READ,
-            description = "El cliente rechaza por texto la cotizacion enviada. Pide confirmacion antes. El motivo " +
+            description = "El cliente rechaza por texto la cotizacion enviada (confirma antes solo si Confirmaciones lo pide). El motivo " +
                 "es OPCIONAL: pasalo solo si el cliente lo dijo, nunca lo exijas.",
             parameters = listOf(
                 ToolParameter("quoteId", "integer", true, "quoteId de cotizacion.listar"),
@@ -269,7 +270,7 @@ class ToolCatalog {
             name = ENVIAR,
             mode = ToolMode.READ,
             description = "Da por terminada la cotizacion en curso (pasa a revision de un asesor) y le envia el PDF " +
-                "preliminar al cliente. Usala SOLO con el checklist completo y cuando el cliente confirme. Dile que " +
+                "preliminar al cliente. Usala SOLO con el checklist completo y segun Confirmaciones. Dile que " +
                 "un agente de ventas la revisara y aprobara. Despues ya no la modificas: si quiere cambiarla, " +
                 "cotizacion.reabrir (si nadie la tomo) o cotizacion.solicitar_cambio.",
         ),
@@ -425,20 +426,31 @@ class ToolCatalog {
      * que solo existen en WhatsApp (stickers, enviar el PDF al cliente).
      */
     fun availableFor(contexto: ExecutionContext): List<ToolDefinition> =
-        todas.filter { contexto.toolFor(it.name) != null && (it.name !in SOLO_WHATSAPP || conStickers(contexto)) }
+        todas.filter {
+            contexto.toolFor(it.name) != null &&
+                (it.name !in SOLO_WHATSAPP || conStickers(contexto)) &&
+                (it.name !in CON_CLIENTE || conCliente(contexto))
+        }
 
     companion object {
         const val STICKER = "tino.sticker"
         const val CONTACTO = "contacto.registrar"
         const val ENVIAR = "cotizacion.enviar"
 
-        /** Herramientas que solo tienen sentido con un cliente al otro lado del chat. */
+        /** Herramientas que solo tienen sentido con un cliente al otro lado del chat (WhatsApp o web). */
         const val RENDER = "cotizacion.render"
         const val APROBAR_DISENO = "cotizacion.aprobar_diseno"
-        val SOLO_WHATSAPP = setOf(STICKER, ENVIAR, RENDER, APROBAR_DISENO)
+        val CON_CLIENTE = setOf(ENVIAR, RENDER, APROBAR_DISENO)
+
+        /** Los stickers solo existen en WhatsApp. */
+        val SOLO_WHATSAPP = setOf(STICKER)
         val MOMENTOS_STICKER = listOf("saludo", "listo", "buscando")
 
         fun conStickers(contexto: ExecutionContext): Boolean =
             contexto.channel.kind.equals("whatsapp", ignoreCase = true) || contexto.channel.accountRef.startsWith("wa:")
+
+        /** Un cliente final al otro lado: WhatsApp o el chat de la pagina web. */
+        fun conCliente(contexto: ExecutionContext): Boolean =
+            conStickers(contexto) || contexto.channel.kind.equals("web", ignoreCase = true) || contexto.channel.accountRef.startsWith("web:")
     }
 }

@@ -8,6 +8,10 @@ import com.erp_maya.agent.erp.domain.CustomerSummary
 import com.erp_maya.agent.erp.domain.LeadAck
 import com.erp_maya.agent.erp.domain.LeadWrite
 import com.erp_maya.agent.erp.domain.ErpQuote
+import com.erp_maya.agent.erp.domain.ErpClientPrices
+import com.erp_maya.agent.erp.domain.ErpPreviewLine
+import com.erp_maya.agent.erp.domain.ErpPreviewPrices
+import com.erp_maya.agent.erp.domain.ErpPreviewRequest
 import com.erp_maya.agent.erp.domain.ErpChangeRequest
 import com.erp_maya.agent.erp.domain.ChangeRequestWrite
 import com.erp_maya.agent.erp.domain.ErpQuoteSummary
@@ -389,6 +393,12 @@ open class ErpHttpClient(
 
     override fun getQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote? =
         uno(HttpRequest.GET<Any>("/api/quotes/$quoteId"), tenantId, conversationId, ErpQuote::class.java)
+
+    override fun getClientPrices(tenantId: Long, conversationId: Long, quoteId: Long): ErpClientPrices? =
+        uno(HttpRequest.GET<Any>("/api/quotes/$quoteId/client-prices"), tenantId, conversationId, ErpClientPrices::class.java)
+
+    override fun previewClientPrices(tenantId: Long, conversationId: Long, lines: List<ErpPreviewLine>): ErpPreviewPrices? =
+        uno(HttpRequest.POST("/api/quotes/client-prices/preview", ErpPreviewRequest(lines)), tenantId, conversationId, ErpPreviewPrices::class.java)
 
     override fun finalizeQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote =
         uno(HttpRequest.POST("/api/quotes/$quoteId/finalize", ActorBody(CREADO_POR)), tenantId, conversationId, ErpQuote::class.java)

@@ -1,0 +1,64 @@
+# Fotos y archivos del chat web. En WhatsApp viven en Meta; en la web no hay
+# quien los guarde y el render necesita la foto base despues. Se guardan aqui
+# con vencimiento (7 dias por defecto) y una tarea borra lo vencido: no se
+# conservan fotos de clientes de forma permanente.
+#
+# web_outbox: lo que el visitante recibe despues de su turno (renders que
+# tardan unos segundos, avisos). El widget lo consulta mientras haya algo en
+# camino.
+databaseChangeLog:
+
+  - changeSet:
+      id: 190-web-media
+      author: stackline
+      comment: Media del chat web (fotos del visitante, renders y PDF) con vencimiento.
+      changes:
+        - createTable:
+            tableName: web_media
+            columns:
+              - column: { name: id, type: VARCHAR(40), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: widget_key, type: VARCHAR(48), constraints: { nullable: false } }
+              - column: { name: session_ref, type: VARCHAR(64), constraints: { nullable: false } }
+              - column: { name: kind, type: VARCHAR(16), constraints: { nullable: false } }
+              - column: { name: mime_type, type: VARCHAR(80), constraints: { nullable: false } }
+              - column: { name: file_name, type: VARCHAR(160) }
+              - column: { name: size_bytes, type: INT, constraints: { nullable: false } }
+              - column: { name: content, type: BYTEA, constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: expires_at, type: TIMESTAMPTZ, constraints: { nullable: false } }
+        - sql:
+            sql: ALTER TABLE web_media ADD CONSTRAINT ck_web_media_kind CHECK (kind IN ('image', 'document'));
+        - createIndex:
+            tableName: web_media
+            indexName: ix_web_media_expires
+            columns:
+              - column: { name: expires_at }
+      rollback:
+        - dropTable: { tableName: web_media }
+
+  - changeSet:
+      id: 191-web-outbox
+      author: stackline
+      comment: Entregas diferidas del chat web (renders, avisos) que el widget consulta.
+      changes:
+        - createTable:
+            tableName: web_outbox
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: widget_key, type: VARCHAR(48), constraints: { nullable: false } }
+              - column: { name: session_ref, type: VARCHAR(64), constraints: { nullable: false } }
+              - column: { name: kind, type: VARCHAR(16), constraints: { nullable: false } }
+              - column: { name: text, type: TEXT }
+              - column: { name: media_id, type: VARCHAR(40) }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: ALTER TABLE web_outbox ADD CONSTRAINT ck_web_outbox_kind CHECK (kind IN ('text', 'image', 'document'));
+        - createIndex:
+            tableName: web_outbox
+            indexName: ix_web_outbox_session
+            columns:
+              - column: { name: widget_key }
+              - column: { name: session_ref }
+              - column: { name: id }
+      rollback:
+        - dropTable: { tableName: web_outbox }

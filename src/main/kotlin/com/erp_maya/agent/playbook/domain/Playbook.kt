@@ -28,8 +28,18 @@ data class Playbook(
     val mensajes: Mensajes = Mensajes(),
     /** Fotos del cliente. Apagado por defecto: leerlas cuesta una llamada extra al modelo. */
     val imagenes: ImagenesConfig = ImagenesConfig(),
+    /** Que pregunta el agente antes de seguir. De aqui salen el prompt y las compuertas. */
+    val confirmaciones: Confirmaciones = Confirmaciones(),
+    /** Como escribe: largo, repeticiones, formato. Sale al prompt tal cual. */
+    val estilo: Estilo = Estilo(),
 ) {
     fun audiencia(kindCanal: String): String = audiencias[kindCanal.lowercase()] ?: AUDIENCIA_CLIENTE
+
+    /** Pedir el "si" antes de enviar. Sin valor propio, manda lo que ya estaba en cotizacion.envio. */
+    fun confirmarEnvio(): Boolean = confirmaciones.enviar ?: cotizacion.envio.requiereConfirmacion
+
+    /** Preguntar antes de reabrir. Sin valor propio, manda cotizacion.reapertura. */
+    fun confirmarReapertura(): Boolean = confirmaciones.reabrir ?: cotizacion.reapertura.requiereConfirmacion
 
     companion object {
         const val AUDIENCIA_CLIENTE = "cliente"
@@ -44,6 +54,79 @@ data class Playbook(
  * describa lo que necesita. Las que pasen de `max_por_turno` se ignoran y el
  * agente lo dice.
  */
+/**
+ * Cuanto pregunta el agente antes de seguir. La idea: lo que el cliente dice
+ * con sus palabras es decision tomada; se confirma una vez, en el resumen
+ * final, y solo lo que compromete (enviar, aprobar) lleva compuerta.
+ *
+ * El mismo valor escribe la regla en el prompt y activa o apaga la compuerta
+ * en el codigo, asi nunca dicen cosas distintas.
+ */
+@Serdeable
+data class Confirmaciones(
+    /** false: lo que el cliente dijo (color, material, medidas, cantidad) se anota sin repreguntar. */
+    @JsonProperty("repreguntar_datos") val repreguntarDatos: Boolean = false,
+    /** Medidas estimadas de una foto: `aparte`, `resumen` (en el resumen final) o `no`. */
+    @JsonProperty("medidas_foto") val medidasFoto: String = MEDIDAS_RESUMEN,
+    /** Aprobar el diseño del render: `literal` (un si) o `flexible` (tambien "me gusta", "asi esta bien"). */
+    @JsonProperty("aprobar_diseno") val aprobarDiseno: String = DISENO_FLEXIBLE,
+    /** Preguntar antes de reabrir una enviada. null = lo que diga cotizacion.reapertura. */
+    @Nullable val reabrir: Boolean? = null,
+    /** Pedir el "si" antes de rechazar por texto una cotizacion enviada. */
+    @JsonProperty("rechazar_texto") val rechazarTexto: Boolean = false,
+    /** Pedir el "si" (con numero y total) antes de aprobar por texto. */
+    @JsonProperty("aprobar_texto") val aprobarTexto: Boolean = true,
+    /** Pedir el "si" antes de enviar. null = lo que diga cotizacion.envio. */
+    @Nullable val enviar: Boolean? = null,
+    /** Matices en texto libre que no caben en las opciones. */
+    @Nullable val instrucciones: String? = null,
+) {
+    val medidasAparte: Boolean get() = medidasFoto.equals(MEDIDAS_APARTE, ignoreCase = true)
+    val medidasSinConfirmacion: Boolean get() = medidasFoto.equals(MEDIDAS_NO, ignoreCase = true)
+    val disenoFlexible: Boolean get() = !aprobarDiseno.equals(DISENO_LITERAL, ignoreCase = true)
+
+    companion object {
+        const val MEDIDAS_APARTE = "aparte"
+        const val MEDIDAS_RESUMEN = "resumen"
+        const val MEDIDAS_NO = "no"
+        const val DISENO_LITERAL = "literal"
+        const val DISENO_FLEXIBLE = "flexible"
+    }
+}
+
+/**
+ * Como escribe el agente. Por defecto: mensajes breves, sin repetir lo que ya
+ * se dijo y un tema por mensaje. Un cliente que lee en el celular se cansa de
+ * resumenes largos en cada respuesta.
+ */
+@Serdeable
+data class Estilo(
+    /** `breve` (unas 3 lineas), `normal` o `detallado`. */
+    val largo: String = LARGO_BREVE,
+    /** true: puede repetir el resumen de lo cotizado en cualquier mensaje. */
+    @JsonProperty("repetir_resumen") val repetirResumen: Boolean = false,
+    /** Un tema y a lo mas una pregunta por mensaje, la pregunta al final. */
+    @JsonProperty("un_tema") val unTema: Boolean = true,
+    /** Sin listas ni viñetas: frases cortas. */
+    @JsonProperty("sin_listas") val sinListas: Boolean = true,
+    /**
+     * Cuando pide nombre, telefono y NIT: `al_final` (primero entiende que
+     * quiere y lo anota; los datos cuando ya esta definido o pide el precio
+     * total o el PDF) o `al_inicio` (antes de cotizar).
+     */
+    @JsonProperty("pedir_datos") val pedirDatos: String = PEDIR_AL_FINAL,
+    /** Matices en texto libre. */
+    @Nullable val instrucciones: String? = null,
+) {
+    companion object {
+        const val LARGO_BREVE = "breve"
+        const val LARGO_NORMAL = "normal"
+        const val LARGO_DETALLADO = "detallado"
+        const val PEDIR_AL_FINAL = "al_final"
+        const val PEDIR_AL_INICIO = "al_inicio"
+    }
+}
+
 @Serdeable
 data class ImagenesConfig(
     val aceptar: Boolean = false,

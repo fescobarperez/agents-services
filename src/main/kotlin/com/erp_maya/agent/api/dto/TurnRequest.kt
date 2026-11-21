@@ -73,7 +73,7 @@ data class TurnInput(
 
 @Serdeable
 data class InputImage(
-    /** De donde se baja: hoy solo `whatsapp` (media id de Meta). */
+    /** De donde se baja: `whatsapp` (media id de Meta) o `web` (id de web_media). */
     val source: String,
     val ref: String,
     @JsonProperty("mime_type") @Nullable val mimeType: String? = null,
@@ -82,6 +82,7 @@ data class InputImage(
 ) {
     companion object {
         const val SOURCE_WHATSAPP = "whatsapp"
+        const val SOURCE_WEB = "web"
     }
 }
 

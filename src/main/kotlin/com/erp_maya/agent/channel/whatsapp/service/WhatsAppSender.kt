@@ -214,9 +214,9 @@ open class WhatsAppSender(
         }
     }
 
-    private companion object {
+    companion object {
         private val log = LoggerFactory.getLogger(WhatsAppSender::class.java)
-        const val PREFIJO = "wa:"
+        private const val PREFIJO = "wa:"
         const val RUTA_COTIZACIONES = "/api/quotes/"
         val ID_COTIZACION = Regex("^/api/quotes/(\\d+)/pdf$")
         const val LEYENDA = "Cotización preliminar: un agente de ventas la revisará y aprobará antes de confirmarla."

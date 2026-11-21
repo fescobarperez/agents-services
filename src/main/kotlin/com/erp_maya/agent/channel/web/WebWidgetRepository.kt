@@ -14,6 +14,8 @@ data class WebWidget(
     val title: String?,
     val greeting: String?,
     val color: String?,
+    /** El carrito muestra precios y total (si no, solo productos y cantidades). */
+    val showPrices: Boolean = true,
 )
 
 @Singleton
@@ -24,7 +26,7 @@ open class WebWidgetRepository(private val jdbc: JdbcOperations) {
         jdbc.prepareStatement(
             """
             SELECT w.channel_id, w.tenant_id, w.public_key, c.is_active, ARRAY(SELECT jsonb_array_elements_text(w.allowed_origins)) AS origins,
-                   w.title, w.greeting, w.color
+                   w.title, w.greeting, w.color, w.show_prices
             FROM web_widgets w JOIN channels c ON c.id = w.channel_id
             WHERE w.public_key = ?
             """.trimIndent(),
@@ -42,8 +44,18 @@ open class WebWidgetRepository(private val jdbc: JdbcOperations) {
                     title = rs.getString("title"),
                     greeting = rs.getString("greeting"),
                     color = rs.getString("color"),
+                    showPrices = rs.getBoolean("show_prices"),
                 )
             }
             out
+        }.firstOrNull()
+
+    /** La conversacion de esa sesion del widget, si ya escribio algo. */
+    @Transactional(readOnly = true)
+    open fun conversacion(channelId: Long, sesion: String): Long? =
+        jdbc.prepareStatement("SELECT id FROM conversations WHERE channel_id = ? AND external_ref = ? ORDER BY id DESC LIMIT 1") { st ->
+            st.setLong(1, channelId); st.setString(2, sesion)
+            val rs = st.executeQuery()
+            if (rs.next()) listOf(rs.getLong(1)) else emptyList<Long>()
         }.firstOrNull()
 }

@@ -48,6 +48,7 @@ data class WebChannelRow(
     val title: String?,
     val greeting: String?,
     val color: String?,
+    val showPrices: Boolean,
     val active: Boolean,
     val tenantAgentId: Long?,
     val createdAt: Instant,
@@ -152,7 +153,7 @@ open class TenantAdminRepository(private val jdbc: JdbcOperations) {
         lista(
             """
             SELECT w.channel_id, w.name, w.public_key, ARRAY(SELECT jsonb_array_elements_text(w.allowed_origins)) AS origins,
-                   w.title, w.greeting, w.color, c.is_active, w.created_at,
+                   w.title, w.greeting, w.color, w.show_prices, c.is_active, w.created_at,
                    (SELECT ca.tenant_agent_id FROM channel_agents ca
                      WHERE ca.channel_id = c.id AND ca.tenant_id = w.tenant_id
                        AND now() >= ca.valid_from AND now() < coalesce(ca.valid_to, 'infinity'::timestamptz)
@@ -171,6 +172,7 @@ open class TenantAdminRepository(private val jdbc: JdbcOperations) {
                 title = rs.getString("title"),
                 greeting = rs.getString("greeting"),
                 color = rs.getString("color"),
+                showPrices = rs.getBoolean("show_prices"),
                 active = rs.getBoolean("is_active"),
                 tenantAgentId = largoONulo(rs, "tenant_agent_id"),
                 createdAt = rs.getTimestamp("created_at").toInstant(),
@@ -185,12 +187,13 @@ open class TenantAdminRepository(private val jdbc: JdbcOperations) {
         ) { it.getLong(1) }.first()
         jdbc.prepareStatement(
             """
-            INSERT INTO web_widgets (channel_id, tenant_id, name, public_key, allowed_origins, title, greeting, color)
-            VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, ?)
+            INSERT INTO web_widgets (channel_id, tenant_id, name, public_key, allowed_origins, title, greeting, color, show_prices)
+            VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)
             """.trimIndent(),
         ) { st ->
             st.setLong(1, id); st.setLong(2, tenantId); st.setString(3, d.name); st.setString(4, llave)
             st.setString(5, originsJson); st.setString(6, d.title); st.setString(7, d.greeting); st.setString(8, d.color)
+            st.setBoolean(9, d.showPrices)
             st.executeUpdate()
         }
         return id
@@ -199,12 +202,12 @@ open class TenantAdminRepository(private val jdbc: JdbcOperations) {
     fun updateWebChannel(channelId: Long, d: WebChannelRules.Draft, originsJson: String) {
         jdbc.prepareStatement(
             """
-            UPDATE web_widgets SET name = ?, allowed_origins = ?::jsonb, title = ?, greeting = ?, color = ?, updated_at = now()
+            UPDATE web_widgets SET name = ?, allowed_origins = ?::jsonb, title = ?, greeting = ?, color = ?, show_prices = ?, updated_at = now()
             WHERE channel_id = ?
             """.trimIndent(),
         ) { st ->
             st.setString(1, d.name); st.setString(2, originsJson); st.setString(3, d.title); st.setString(4, d.greeting)
-            st.setString(5, d.color); st.setLong(6, channelId)
+            st.setString(5, d.color); st.setBoolean(6, d.showPrices); st.setLong(7, channelId)
             st.executeUpdate()
         }
     }

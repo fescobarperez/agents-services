@@ -360,3 +360,59 @@ data class LeadAck(
     /** El ERP aviso por correo al equipo de ventas en esta llamada. */
     val notified: Boolean = false,
 )
+
+/**
+ * Precios al cliente (GET /api/quotes/{id}/client-prices): ganancia, gastos y
+ * cargos ya van dentro del precio de cada producto y las lineas suman el subtotal.
+ */
+@Serdeable
+data class ErpClientPrices(
+    @Nullable val subtotal: BigDecimal? = null,
+    @Nullable val tax: BigDecimal? = null,
+    @Nullable val total: BigDecimal? = null,
+    val lines: List<ErpClientLine> = emptyList(),
+)
+
+@Serdeable
+data class ErpClientLine(
+    val itemId: Long,
+    @Nullable val unitPrice: BigDecimal? = null,
+    @Nullable val lineTotal: BigDecimal? = null,
+)
+
+/** Producto aun sin cotizacion: `key` lo pone el agente; `lineTotal` = cantidad × precio de lista. */
+@Serdeable
+data class ErpPreviewLine(
+    val key: String,
+    val quantity: BigDecimal,
+    val lineTotal: BigDecimal,
+    /** Con producto y medidas el ERP aplica el precio por medida (o la deja para el asesor). */
+    @Nullable val productId: Long? = null,
+    @Nullable val height: BigDecimal? = null,
+    @Nullable val width: BigDecimal? = null,
+    @Nullable val depth: BigDecimal? = null,
+)
+
+@Serdeable
+data class ErpPreviewRequest(val lines: List<ErpPreviewLine>)
+
+/**
+ * Vista previa (POST /api/quotes/client-prices/preview): con los cargos,
+ * ganancia, IVA y redondeo de la empresa, repartidos dentro de cada producto.
+ */
+@Serdeable
+data class ErpPreviewPrices(
+    @Nullable val subtotal: BigDecimal? = null,
+    @Nullable val tax: BigDecimal? = null,
+    @Nullable val total: BigDecimal? = null,
+    val lines: List<ErpPreviewPrice> = emptyList(),
+)
+
+@Serdeable
+data class ErpPreviewPrice(
+    val key: String,
+    @Nullable val unitPrice: BigDecimal? = null,
+    @Nullable val lineTotal: BigDecimal? = null,
+    /** La medida se sale de la tolerancia: el precio lo pone un asesor. */
+    val review: Boolean = false,
+)

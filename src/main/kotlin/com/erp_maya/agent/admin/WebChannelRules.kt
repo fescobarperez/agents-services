@@ -17,10 +17,12 @@ object WebChannelRules {
         val title: String?,
         val greeting: String?,
         val color: String?,
+        /** El carrito del widget muestra precios y total. */
+        val showPrices: Boolean = true,
     )
 
     /**
-     * Valida {name, allowedOrigins, title, greeting, color}. `actual` son los
+     * Valida {name, allowedOrigins, title, greeting, color, showPrices}. `actual` son los
      * valores guardados: en una edicion, lo que no venga se conserva.
      */
     fun validar(body: Map<String, Any?>, actual: Draft?): Pair<Draft?, MutableMap<String, String>> {
@@ -51,8 +53,11 @@ object WebChannelRules {
         if (saludo != null && saludo.length > 300) f["greeting"] = "Máximo 300 caracteres"
         val color = texto("color", actual?.color)
         if (color != null && !COLOR.matches(color)) f["color"] = "Color en formato #RRGGBB"
+        val precios = if (body.containsKey("showPrices")) {
+            Parse.bool(body["showPrices"]) ?: run { f["showPrices"] = "Valor inválido"; true }
+        } else actual?.showPrices ?: true
 
-        return if (f.isEmpty()) Draft(nombre!!, origenes, titulo, saludo, color?.uppercase()) to f else null to f
+        return if (f.isEmpty()) Draft(nombre!!, origenes, titulo, saludo, color?.uppercase(), precios) to f else null to f
     }
 
     /** Llave publica del widget: `wk_` y 24 caracteres al azar (≈143 bits). */

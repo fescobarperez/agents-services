@@ -86,6 +86,8 @@ open class AgentLoop(
         telefono: String? = null,
         /** Como vende el agente para esta empresa: datos requeridos, limites, cierre. */
         playbook: Playbook = Playbook(),
+        /** El mensaje aprueba algo que vio ("me gusta", "asi esta bien"); mas amplio que `confirmado`. */
+        aprobacion: Boolean = confirmado,
     ): LoopOutcome {
         val esquemas = catalogo.schemasFor(contexto)
         val mensajes = prompt.messages.toMutableList()
@@ -181,7 +183,7 @@ open class AgentLoop(
                 } else if (call.name.startsWith(PREFIJO_BORRADOR)) {
                     // El borrador vive en el estado del hilo: estas herramientas
                     // lo leen y lo reescriben, por eso no pasan por ToolExecutor.
-                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador, telefono, playbook, confirmado, estado.fotos)
+                    val paso = ejecutarBorrador(contexto, conversationId, call, borrador, telefono, playbook, confirmado, estado.fotos, aprobacion)
                     paso.second?.let { p ->
                         // Si el cliente ya aprobo un diseño y ahora hay cotizacion, se guarda ahi.
                         borrador = adjuntos.adjuntarSiCorresponde(contexto, conversationId, p.borrador)
@@ -271,6 +273,7 @@ open class AgentLoop(
         playbook: Playbook,
         confirmado: Boolean,
         fotos: List<FotoCliente> = emptyList(),
+        aprobacion: Boolean = confirmado,
     ): Pair<ToolResult, DraftStep?> {
         // Concedida al agente y disponible en este canal (enviar es solo WhatsApp).
         if (catalogo.availableFor(contexto).none { it.name == call.name }) {
@@ -305,9 +308,13 @@ open class AgentLoop(
                 "cotizacion.producto_nuevo" -> disenos.productoNuevo(
                     contexto, conversationId, actual, playbook,
                     nombre = call.stringArg("nombre") ?: throw IllegalArgumentException("Falta nombre"),
-                    categoria = call.stringArg("categoria") ?: throw IllegalArgumentException("Falta categoria"),
+                    categoria = call.stringArg("categoria"),
                 )
-                ToolCatalog.APROBAR_DISENO -> adjuntos.aprobar(contexto, conversationId, actual, confirmado)
+                ToolCatalog.APROBAR_DISENO -> adjuntos.aprobar(
+                    contexto, conversationId, actual,
+                    confirmado = if (playbook.confirmaciones.disenoFlexible) aprobacion else confirmado,
+                    medidasAparte = playbook.confirmaciones.medidasAparte,
+                )
                 ToolCatalog.RENDER -> renders.solicitar(
                     contexto, conversationId, actual, playbook, fotos, telefono,
                     fotoNumero = call.longArg("foto")?.toInt(),
@@ -339,7 +346,7 @@ open class AgentLoop(
                         ?: throw IllegalArgumentException("Falta quantity: indica la cantidad exacta que pidio el cliente"),
                     playbook = playbook,
                     medidas = Dimensions.de(call.decimalArg("alto"), call.decimalArg("ancho"), call.decimalArg("profundidad"))
-                        .also { DisenoService.validarAgregar(actual, it) },
+                        .also { DisenoService.validarAgregar(actual, it, playbook) },
                 )
                 // `confirmado` sale del mensaje del cliente en este turno, no
                 // de lo que diga el modelo.

@@ -1,5 +1,8 @@
 package com.erp_maya.agent.render
 
+import com.erp_maya.agent.channel.web.WebChatService
+import com.erp_maya.agent.channel.web.WebMediaRepository
+import com.erp_maya.agent.channel.whatsapp.client.MediaNoDisponibleException
 import com.erp_maya.agent.channel.whatsapp.client.MediaDemasiadoGrandeException
 import com.erp_maya.agent.channel.whatsapp.client.WhatsAppCloudClient
 import com.erp_maya.agent.channel.whatsapp.service.WhatsAppOutbound
@@ -16,7 +19,7 @@ import java.net.InetAddress
 import java.util.UUID
 
 /**
- * Genera los renders encolados y los envia por WhatsApp.
+ * Genera los renders encolados y los envia por WhatsApp o al chat web.
  *
  * Corre aparte del consumidor de mensajes: un render tarda 10-30 s y, dentro
  * del turno, dejaria esperando a los demas clientes. Por cada trabajo: baja
@@ -31,6 +34,8 @@ open class RenderJobConsumer(
     private val imagenes: ImagenService,
     private val router: ModelRouter,
     private val conversaciones: ConversationService,
+    /** Los renders del chat web: foto base y resultado viven aqui, no en Meta. */
+    private val web: WebMediaRepository,
     @param:Value("\${renders.consumer.enabled:true}") private val habilitado: Boolean,
     @param:Value("\${renders.timeout-ms:120000}") private val timeoutMs: Int,
 ) {
@@ -62,13 +67,25 @@ open class RenderJobConsumer(
             return
         }
         try {
-            val base = whatsapp.descargarMedia(job.baseMediaId, ImagenService.MAX_BYTES)
-            val foto = imagenes.preparar(base.bytes)
+            val destino = destinoWeb(job)
+            val base = if (destino != null) {
+                web.leer(job.baseMediaId)?.bytes ?: throw MediaNoDisponibleException(job.baseMediaId, "vencida en el chat web")
+            } else {
+                whatsapp.descargarMedia(job.baseMediaId, ImagenService.MAX_BYTES).bytes
+            }
+            val foto = imagenes.preparar(base)
             val ref = ModelRef(modelo.id, modelo.providerCode, modelo.modelName, 0, supportsTools = false, supportsCache = false)
             val render = router.editImage(ref, job.prompt, foto, timeoutMs)
-            val mediaId = whatsapp.subirMedia(job.accountRef, render.bytes, render.mimeType, "render-${job.id}.png")
             val pie = pie(job)
-            val wamid = whatsapp.send(job.accountRef, job.recipient, WhatsAppOutbound.Image(mediaId, pie))
+            val (mediaId, wamid) = if (destino != null) {
+                // Web: se guarda y queda en la bandeja de la sesion; el widget la recoge.
+                val id = web.guardar(destino.first, destino.second, WebChatService.KIND_IMAGEN, render.mimeType, "render-${job.id}.png", render.bytes)
+                web.entregar(destino.first, destino.second, WebChatService.KIND_IMAGEN, pie, id)
+                id to "web:$id"
+            } else {
+                val id = whatsapp.subirMedia(job.accountRef, render.bytes, render.mimeType, "render-${job.id}.png")
+                id to whatsapp.send(job.accountRef, job.recipient, WhatsAppOutbound.Image(id, pie))
+            }
             // Queda en el hilo para que el modelo sepa que el cliente ya la vio.
             conversaciones.registrarAviso(job.conversationId, wamid, "[Render ${job.renderNumber} de ${job.renderMax} enviado al cliente] $pie")
             trabajos.terminar(job.id, mediaId, wamid, modelo.imageCost)
@@ -77,6 +94,9 @@ open class RenderJobConsumer(
             terminarConAviso(job, e.message ?: "foto demasiado grande", MENSAJE_FOTO)
         } catch (e: ImagenNoSoportadaException) {
             terminarConAviso(job, e.message ?: "foto no soportada", MENSAJE_FOTO)
+        } catch (e: MediaNoDisponibleException) {
+            // La foto ya no esta en Meta: reintentar no la trae de vuelta.
+            terminarConAviso(job, e.message ?: "foto no disponible", MENSAJE_FOTO)
         } catch (e: Exception) {
             val detalle = "${e.javaClass.simpleName}: ${e.message.orEmpty()}"
             if (job.attempts < MAX_INTENTOS) {
@@ -93,12 +113,25 @@ open class RenderJobConsumer(
         log.warn("render {} perdido: {}", job.id, error)
         trabajos.fallar(job.id, error)
         runCatching {
-            val wamid = whatsapp.send(job.accountRef, job.recipient, WhatsAppOutbound.Text(mensaje))
+            val destino = destinoWeb(job)
+            val wamid = if (destino != null) {
+                "web:aviso:" + web.entregar(destino.first, destino.second, WebChatService.KIND_TEXTO, mensaje, null)
+            } else {
+                whatsapp.send(job.accountRef, job.recipient, WhatsAppOutbound.Text(mensaje))
+            }
             conversaciones.registrarAviso(job.conversationId, wamid, "[Render ${job.renderNumber} no se pudo generar] $mensaje")
         }.onFailure { log.warn("no se pudo avisar del render {} perdido: {}", job.id, it.message) }
     }
 
+    /** Llave del widget y sesion si el render es del chat web; null si es de WhatsApp. */
+    private fun destinoWeb(job: RenderJob): Pair<String, String>? {
+        if (!job.accountRef.startsWith(WEB)) return null
+        val sesion = web.sesionDe(job.conversationId) ?: error("la conversacion ${job.conversationId} no tiene sesion web")
+        return job.accountRef.removePrefix(WEB) to sesion
+    }
+
     companion object {
+        private const val WEB = "web:"
         private val log = LoggerFactory.getLogger(RenderJobConsumer::class.java)
 
         private const val LOTE = 2

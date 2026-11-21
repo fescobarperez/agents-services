@@ -172,6 +172,8 @@ data class WebChannelView(
     val active: Boolean,
     val tenantAgentId: Long?,
     val createdAt: String,
+    /** El carrito del widget muestra precios y total. */
+    val showPrices: Boolean = true,
 )
 
 @Serdeable

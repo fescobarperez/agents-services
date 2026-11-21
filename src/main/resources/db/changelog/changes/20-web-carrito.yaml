@@ -1,0 +1,17 @@
+# Carrito del widget web: la empresa decide en la consola si el visitante ve
+# precios y total, o solo productos y cantidades.
+databaseChangeLog:
+
+  - changeSet:
+      id: 200-web-carrito-precios
+      author: stackline
+      changes:
+        - addColumn:
+            tableName: web_widgets
+            columns:
+              - column:
+                  name: show_prices
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
