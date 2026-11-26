@@ -47,6 +47,8 @@ open class WebChatService(
     @param:Value("\${web.rate.session-per-minute:10}") private val porSesion: Int,
     @param:Value("\${web.rate.ip-per-minute:30}") private val porIp: Int,
     @param:Value("\${web.rate.widget-per-minute:120}") private val porWidget: Int,
+    /** La firma «Con tecnología de Corvex» enlaza aqui (vacio: solo texto). */
+    @param:Value("\${web.powered-by-url:}") private val poweredByUrl: String = "",
 ) {
 
     private val alcances = scopes.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -64,6 +66,7 @@ open class WebChatService(
             maxImages = fotosPorMensaje(llave, w),
             showPrices = w.showPrices,
             currency = moneda(llave, w),
+            poweredByUrl = WebFirma.enlace(poweredByUrl),
         )
     }
 

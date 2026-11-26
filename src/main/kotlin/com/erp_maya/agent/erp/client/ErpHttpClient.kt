@@ -1,6 +1,9 @@
 package com.erp_maya.agent.erp.client
 
 import com.erp_maya.agent.erp.domain.AiLimit
+import com.erp_maya.agent.erp.domain.CatalogCategory
+import com.erp_maya.agent.erp.domain.CatalogProduct
+import com.erp_maya.agent.erp.domain.ProductImageData
 import com.erp_maya.agent.erp.domain.ProductTemplate
 import com.erp_maya.agent.erp.domain.TemplateItemWrite
 import com.erp_maya.agent.erp.domain.CompanyInfo
@@ -12,6 +15,10 @@ import com.erp_maya.agent.erp.domain.ErpClientPrices
 import com.erp_maya.agent.erp.domain.ErpPreviewLine
 import com.erp_maya.agent.erp.domain.ErpPreviewPrices
 import com.erp_maya.agent.erp.domain.ErpPreviewRequest
+import com.erp_maya.agent.erp.domain.ErpPreviewBatch
+import com.erp_maya.agent.erp.domain.ErpPreviewBatchRequest
+import com.erp_maya.agent.erp.domain.ErpPreviewScenario
+import com.erp_maya.agent.erp.domain.ErpScenarioPrices
 import com.erp_maya.agent.erp.domain.ErpChangeRequest
 import com.erp_maya.agent.erp.domain.ChangeRequestWrite
 import com.erp_maya.agent.erp.domain.ErpQuoteSummary
@@ -73,7 +80,18 @@ data class ErpProduct(
     @Nullable val tracksStock: Boolean? = null,
     @Nullable val itemType: String? = null,
     @Nullable val reviewStatus: String? = null,
+    @Nullable val categoryId: Long? = null,
+    @Nullable val categoryName: String? = null,
+    @Nullable val description: String? = null,
+    /** Version de la foto (null = sin foto): va en ?v= de GET /api/products/{id}/image. */
+    @Nullable val imageVersion: Long? = null,
 ) {
+    fun catalogo() = CatalogProduct(
+        id = id, sku = sku, name = name, price = price, unit = unit, categoryId = categoryId,
+        categoryName = categoryName, description = description, imageVersion = imageVersion,
+        status = status, itemType = itemType,
+    )
+
     fun resumen() = ProductSummary(
         id = id, sku = sku, name = name, unitPrice = price, unit = unit,
         dimensions = Dimensions.de(height, width, depth), dimensionUnit = dimensionUnit,
@@ -355,6 +373,30 @@ open class ErpHttpClient(
         uno(HttpRequest.GET<Any>("/api/products/$productId"), tenantId, conversationId, ErpProduct::class.java)
             ?.resumen()
 
+    override fun categories(tenantId: Long, conversationId: Long): List<CatalogCategory> =
+        // CategoryController → List<CategoryResponse> {id, name, icon, parentId}.
+        lista(HttpRequest.GET<Any>("/api/categories"), tenantId, conversationId, CatalogCategory::class.java)
+
+    override fun productsInCategory(tenantId: Long, conversationId: Long, categoryId: Long, limit: Int): List<CatalogProduct> {
+        // ProductController con categoryId: la categoria y sus subcategorias; solo vendibles.
+        val uri = UriBuilder.of("/api/products")
+            .queryParam("categoryId", categoryId)
+            .queryParam("itemType", "sellable")
+            .queryParam("size", limit)
+            .build()
+        return pagina(HttpRequest.GET<Any>(uri), tenantId, conversationId, ErpProduct::class.java).map { it.catalogo() }
+    }
+
+    override fun productImage(tenantId: Long, conversationId: Long, productId: Long, thumb: Boolean): ProductImageData? {
+        // ProductImageController: bytes con su Content-Type; 404 si no tiene foto.
+        val ruta = "/api/products/$productId/image" + if (thumb) "?size=thumb" else ""
+        val r = ejecutar(HttpRequest.GET<Any>(ruta), tenantId, conversationId, MediaType.ALL_TYPE) { decorado ->
+            provider.client().toBlocking().exchange(decorado, ByteArray::class.java)
+        } ?: return null
+        val bytes = r.body() ?: return null
+        return ProductImageData(r.contentType.map { it.toString() }.orElse("image/jpeg"), bytes)
+    }
+
     override fun proposeProduct(tenantId: Long, conversationId: Long, propuesta: ProductProposal): ProductSummary =
         uno(HttpRequest.POST("/api/products/proposals", propuesta), tenantId, conversationId, ErpProduct::class.java)
             ?.resumen()
@@ -399,6 +441,12 @@ open class ErpHttpClient(
 
     override fun previewClientPrices(tenantId: Long, conversationId: Long, lines: List<ErpPreviewLine>): ErpPreviewPrices? =
         uno(HttpRequest.POST("/api/quotes/client-prices/preview", ErpPreviewRequest(lines)), tenantId, conversationId, ErpPreviewPrices::class.java)
+
+    override fun previewClientPricesBatch(tenantId: Long, conversationId: Long, scenarios: List<ErpPreviewScenario>): List<ErpScenarioPrices> =
+        uno(
+            HttpRequest.POST("/api/quotes/client-prices/preview/batch", ErpPreviewBatchRequest(scenarios)),
+            tenantId, conversationId, ErpPreviewBatch::class.java,
+        )?.scenarios ?: throw ErpException("El ERP no devolvió la vista previa de precios")
 
     override fun finalizeQuote(tenantId: Long, conversationId: Long, quoteId: Long): ErpQuote =
         uno(HttpRequest.POST("/api/quotes/$quoteId/finalize", ActorBody(CREADO_POR)), tenantId, conversationId, ErpQuote::class.java)

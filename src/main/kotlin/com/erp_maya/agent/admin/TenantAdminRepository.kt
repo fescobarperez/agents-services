@@ -54,6 +54,26 @@ data class WebChannelRow(
     val createdAt: Instant,
 )
 
+data class PlannerWidgetRow(
+    val id: Long,
+    val name: String,
+    val publicKey: String,
+    val origins: List<String>,
+    val title: String?,
+    val accentColor: String?,
+    val lang: String,
+    val projectTypesJson: String,
+    val categoryIdsJson: String,
+    val fitThresholdPct: BigDecimal,
+    val retentionDays: Int,
+    val maxOptions: Int,
+    val contactWhatsapp: String?,
+    val active: Boolean,
+    /** El agente de la empresa que lo atiende hoy (la conversacion de la fase 2 y su modelo de imagenes). */
+    val tenantAgentId: Long?,
+    val createdAt: Instant,
+)
+
 data class PlaybookRow(val version: Int, val config: String, val createdBy: String?, val createdAt: Instant)
 
 /** SQL de la configuracion de IA de una empresa. Sin transacciones propias: las abre [TenantAdminService]. */
@@ -92,19 +112,23 @@ open class TenantAdminRepository(private val jdbc: JdbcOperations) {
     fun channels(tenantId: Long): List<ChannelRow> =
         lista(
             """
-            SELECT c.id, c.kind, c.account_ref, coalesce(w.name, c.label) AS web_name,
+            SELECT c.id, c.kind, c.account_ref, coalesce(w.name, pw.name, c.label) AS web_name,
                    (SELECT ca.tenant_agent_id FROM channel_agents ca
                      WHERE ca.channel_id = c.id AND ca.tenant_id = ?
                        AND now() >= ca.valid_from AND now() < coalesce(ca.valid_to, 'infinity'::timestamptz)
                      ORDER BY ca.priority DESC, ca.valid_from DESC LIMIT 1) AS tenant_agent_id
             FROM channels c
             LEFT JOIN web_widgets w ON w.channel_id = c.id
+            LEFT JOIN planner_widgets pw ON pw.channel_id = c.id
             WHERE c.is_active
-              AND (c.account_ref = ? OR w.tenant_id = ? OR c.tenant_id = ?
+              AND (c.account_ref = ? OR w.tenant_id = ? OR pw.tenant_id = ? OR c.tenant_id = ?
                    OR EXISTS (SELECT 1 FROM channel_agents x WHERE x.channel_id = c.id AND x.tenant_id = ?))
             ORDER BY c.kind, c.account_ref
             """.trimIndent(),
-            { st -> st.setLong(1, tenantId); st.setString(2, erpRef(tenantId)); st.setLong(3, tenantId); st.setLong(4, tenantId); st.setLong(5, tenantId) },
+            { st ->
+                st.setLong(1, tenantId); st.setString(2, erpRef(tenantId)); st.setLong(3, tenantId)
+                st.setLong(4, tenantId); st.setLong(5, tenantId); st.setLong(6, tenantId)
+            },
         ) { rs ->
             ChannelRow(rs.getLong("id"), rs.getString("kind"), rs.getString("account_ref"),
                 rs.getObject("tenant_agent_id")?.let { rs.getLong("tenant_agent_id") }, rs.getString("web_name"))
@@ -209,6 +233,92 @@ open class TenantAdminRepository(private val jdbc: JdbcOperations) {
             st.setString(1, d.name); st.setString(2, originsJson); st.setString(3, d.title); st.setString(4, d.greeting)
             st.setString(5, d.color); st.setBoolean(6, d.showPrices); st.setLong(7, channelId)
             st.executeUpdate()
+        }
+    }
+
+    // ── planificadores por presupuesto ──────────────────────────────────────
+
+    /** Los planificadores de la empresa, activos o no, con el agente que los atiende hoy. `projectTypes` viene como JSON crudo. */
+    fun plannerWidgets(tenantId: Long): List<PlannerWidgetRow> =
+        lista(
+            """
+            SELECT w.channel_id, w.name, w.public_key, ARRAY(SELECT jsonb_array_elements_text(w.allowed_origins)) AS origins,
+                   w.title, w.accent_color, w.lang, w.project_types::text AS project_types,
+                   w.category_ids::text AS category_ids, w.fit_threshold_pct,
+                   w.retention_days, w.max_options, w.contact_whatsapp, c.is_active, w.created_at,
+                   (SELECT ca.tenant_agent_id FROM channel_agents ca
+                     WHERE ca.channel_id = c.id AND ca.tenant_id = w.tenant_id
+                       AND now() >= ca.valid_from AND now() < coalesce(ca.valid_to, 'infinity'::timestamptz)
+                     ORDER BY ca.priority DESC, ca.valid_from DESC LIMIT 1) AS tenant_agent_id
+            FROM planner_widgets w JOIN channels c ON c.id = w.channel_id
+            WHERE w.tenant_id = ?
+            ORDER BY w.created_at
+            """.trimIndent(),
+            { it.setLong(1, tenantId) },
+        ) { rs ->
+            PlannerWidgetRow(
+                id = rs.getLong("channel_id"),
+                name = rs.getString("name"),
+                publicKey = rs.getString("public_key"),
+                origins = (rs.getArray("origins")?.array as? Array<*>)?.mapNotNull { it?.toString() }.orEmpty(),
+                title = rs.getString("title"),
+                accentColor = rs.getString("accent_color"),
+                lang = rs.getString("lang"),
+                projectTypesJson = rs.getString("project_types"),
+                categoryIdsJson = rs.getString("category_ids"),
+                fitThresholdPct = rs.getBigDecimal("fit_threshold_pct"),
+                retentionDays = rs.getInt("retention_days"),
+                maxOptions = rs.getInt("max_options"),
+                contactWhatsapp = rs.getString("contact_whatsapp"),
+                active = rs.getBoolean("is_active"),
+                tenantAgentId = largoONulo(rs, "tenant_agent_id"),
+                createdAt = rs.getTimestamp("created_at").toInstant(),
+            )
+        }
+
+    /** Crea el canal `planner:{llave}` y su planificador. Devuelve el id del canal. */
+    fun insertPlannerWidget(
+        tenantId: Long, llave: String, capabilitiesJson: String, d: PlannerWidgetRules.Draft,
+        originsJson: String, typesJson: String, categoriesJson: String,
+    ): Long {
+        val id = lista(
+            "INSERT INTO channels (kind, account_ref, capabilities, label) VALUES ('planner', ?, ?::jsonb, ?) RETURNING id",
+            { st -> st.setString(1, "planner:$llave"); st.setString(2, capabilitiesJson); st.setString(3, d.name) },
+        ) { it.getLong(1) }.first()
+        jdbc.prepareStatement(
+            """
+            INSERT INTO planner_widgets (channel_id, tenant_id, name, public_key, allowed_origins, title, accent_color, lang,
+                                         project_types, fit_threshold_pct, retention_days, max_options, contact_whatsapp, category_ids)
+            VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?::jsonb)
+            """.trimIndent(),
+        ) { st ->
+            st.setLong(1, id); st.setLong(2, tenantId); st.setString(3, d.name); st.setString(4, llave)
+            st.setString(5, originsJson); st.setString(6, d.title); st.setString(7, d.accentColor); st.setString(8, d.lang)
+            st.setString(9, typesJson); st.setBigDecimal(10, d.fitThresholdPct)
+            st.setInt(11, d.retentionDays); st.setInt(12, d.maxOptions); st.setString(13, d.contactWhatsapp)
+            st.setString(14, categoriesJson)
+            st.executeUpdate()
+        }
+        return id
+    }
+
+    fun updatePlannerWidget(channelId: Long, d: PlannerWidgetRules.Draft, originsJson: String, typesJson: String, categoriesJson: String) {
+        jdbc.prepareStatement(
+            """
+            UPDATE planner_widgets SET name = ?, allowed_origins = ?::jsonb, title = ?, accent_color = ?, lang = ?,
+                   project_types = ?::jsonb, fit_threshold_pct = ?, retention_days = ?, max_options = ?,
+                   contact_whatsapp = ?, category_ids = ?::jsonb, updated_at = now()
+            WHERE channel_id = ?
+            """.trimIndent(),
+        ) { st ->
+            st.setString(1, d.name); st.setString(2, originsJson); st.setString(3, d.title); st.setString(4, d.accentColor)
+            st.setString(5, d.lang); st.setString(6, typesJson); st.setBigDecimal(7, d.fitThresholdPct)
+            st.setInt(8, d.retentionDays); st.setInt(9, d.maxOptions); st.setString(10, d.contactWhatsapp)
+            st.setString(11, categoriesJson); st.setLong(12, channelId)
+            st.executeUpdate()
+        }
+        jdbc.prepareStatement("UPDATE channels SET label = ? WHERE id = ?") { st ->
+            st.setString(1, d.name); st.setLong(2, channelId); st.executeUpdate()
         }
     }
 

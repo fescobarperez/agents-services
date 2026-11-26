@@ -133,4 +133,14 @@ class WebChannelTest {
         assertTrue(WebChatService.LLAVE.matches(a), a)
         assertTrue(a != b)
     }
+
+    @Test
+    fun `la firma enlaza solo a una URL https sin espacios`() {
+        assertEquals("https://corvex.com.gt", WebFirma.enlace(" https://corvex.com.gt "))
+        assertNull(WebFirma.enlace(""))
+        assertNull(WebFirma.enlace(null))
+        assertNull(WebFirma.enlace("http://corvex.com.gt"), "sin https no")
+        assertNull(WebFirma.enlace("javascript:alert(1)"))
+        assertNull(WebFirma.enlace("https://corvex.com.gt/ x"))
+    }
 }

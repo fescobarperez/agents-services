@@ -21,6 +21,7 @@ import com.erp_maya.agent.playbook.service.PlaybookService
 import com.erp_maya.agent.tools.service.ConfirmationDetector
 import com.erp_maya.agent.prompt.domain.FotoCliente
 import com.erp_maya.agent.prompt.domain.SessionState
+import com.erp_maya.agent.prompt.service.ContextoDeCanal
 import com.erp_maya.agent.prompt.service.PromptBuilder
 import com.erp_maya.agent.summary.service.ConversationSummarizer
 import com.erp_maya.agent.quote.PanelActionService
@@ -52,6 +53,8 @@ open class AgentTurnService(
     private val playbooks: PlaybookService,
     private val lector: LectorImagenes,
     private val cuota: AiQuotaService,
+    /** Lo que cada canal agrega al prompt (p. ej. el estado del planificador). */
+    private val contextosDeCanal: List<ContextoDeCanal>,
 ) {
 
     /**
@@ -177,7 +180,14 @@ open class AgentTurnService(
         val recientes = conversaciones.recientes(conversationId, PromptBuilder.VENTANA + LIMITE_RAFAGA)
             .filterNot { it.turnId == turnId && it.direction == Direction.IN }
 
-        val prompt = promptBuilder.build(contexto, estado, recientes, entrante, playbook)
+        // Lo que el cliente tiene en pantalla y el historial no cuenta. Un fallo
+        // aqui no tumba el turno: el modelo responde sin ese bloque.
+        val delCanal = contextosDeCanal.firstNotNullOfOrNull { c ->
+            runCatching { c.para(contexto, conversationId) }
+                .onFailure { log.warn("no se pudo armar el contexto del canal {}: {}", contexto.channel.kind, it.message) }
+                .getOrNull()
+        }
+        val prompt = promptBuilder.build(contexto, estado, recientes, entrante, playbook, delCanal)
 
         // La confirmacion se decide aqui y se le pasa a la compuerta ya
         // resuelta: interpretar un "si" a partir de texto libre no es algo que

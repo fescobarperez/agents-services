@@ -1,7 +1,9 @@
 package com.erp_maya.agent.model.service
 
 import com.erp_maya.agent.context.domain.ModelRef
+import com.erp_maya.agent.model.domain.ImagenGenerada
 import com.erp_maya.agent.model.domain.ImagenParaModelo
+import com.erp_maya.agent.model.domain.ModelCallException
 import com.erp_maya.agent.model.domain.ModelCompletion
 import com.erp_maya.agent.model.domain.ModelOptions
 import com.erp_maya.agent.model.domain.ModelPrompt
@@ -68,6 +70,25 @@ class ProveedorDePruebas : ModelProvider {
         return ModelCompletion(text = respuestaImagenes, usage = ModelUsage(input = 900, cached = 0, output = 60))
     }
 
+    /** Renders pedidos: (editada sobre una foto, instrucciones). */
+    val rendersPedidos = mutableListOf<Pair<Boolean, String>>()
+
+    /** Si no es null, el render falla con este motivo. */
+    @Volatile
+    var falloRender: String? = null
+
+    override fun editImage(model: ModelRef, instrucciones: String, foto: ImagenParaModelo, timeoutMs: Int): ImagenGenerada {
+        rendersPedidos += true to instrucciones
+        falloRender?.let { throw ModelCallException(it) }
+        return ImagenGenerada(RENDER_FALSO, "image/png")
+    }
+
+    override fun generateImage(model: ModelRef, instrucciones: String, timeoutMs: Int): ImagenGenerada {
+        rendersPedidos += false to instrucciones
+        falloRender?.let { throw ModelCallException(it) }
+        return ImagenGenerada(RENDER_FALSO, "image/png")
+    }
+
     /** Respuestas programadas, que se consumen en orden. */
     val guion: java.util.Queue<ModelCompletion> = java.util.concurrent.ConcurrentLinkedQueue()
 
@@ -81,5 +102,12 @@ class ProveedorDePruebas : ModelProvider {
         recibidos.clear()
         esquemasVistos.clear()
         lecturasPedidas.clear()
+        rendersPedidos.clear()
+        falloRender = null
+    }
+
+    companion object {
+        /** Los bytes del render simulado (la firma de un PNG basta: nadie lo decodifica). */
+        val RENDER_FALSO = byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10, 0, 0, 0, 0)
     }
 }

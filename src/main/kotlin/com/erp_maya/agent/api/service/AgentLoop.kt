@@ -1,6 +1,7 @@
 package com.erp_maya.agent.api.service
 
 import com.erp_maya.agent.cita.CitaService
+import com.erp_maya.agent.channel.planner.PlannerTools
 import com.erp_maya.agent.api.dto.AgentEvent
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.erp.domain.ErpException
@@ -73,6 +74,7 @@ open class AgentLoop(
     private val renders: RenderService,
     private val adjuntos: AdjuntoDiseno,
     private val citas: CitaService,
+    private val planificador: PlannerTools,
 ) {
 
     open fun run(
@@ -180,6 +182,12 @@ open class AgentLoop(
                     // Agenda de Stackline Salud: el paciente es quien escribe
                     // (su numero en WhatsApp), no el cliente del borrador.
                     citas.ejecutar(contexto, conversationId, call, telefono)
+                } else if (call.name.startsWith(PlannerTools.PREFIJO)) {
+                    // Planificador por presupuesto: trabajan sobre la sesion del
+                    // visitante (la de esta conversacion), no sobre el borrador.
+                    val (r, tarjeta) = planificador.ejecutar(contexto, conversationId, call)
+                    tarjeta?.let { tarjetas[it.card] = it }
+                    r
                 } else if (call.name.startsWith(PREFIJO_BORRADOR)) {
                     // El borrador vive en el estado del hilo: estas herramientas
                     // lo leen y lo reescriben, por eso no pasan por ToolExecutor.
@@ -520,7 +528,7 @@ open class AgentLoop(
             "cotizacion.solicitar_cambio", "cotizacion.consultar", "cotizaciones.issue",
             "cotizacion.diseno", "cotizacion.confirmar_medidas", "cotizacion.producto_nuevo", "cotizacion.render", "cotizacion.aprobar_diseno",
             "cotizacion.aprobar", "cotizacion.rechazar", "cotizacion.motivo_rechazo",
-        ) + CitaService.MUTANTES
+        ) + CitaService.MUTANTES + PlannerTools.MUTANTES
 
         /** Verbos con los que el modelo anuncia que hizo algo. */
         private val AFIRMA = Regex(

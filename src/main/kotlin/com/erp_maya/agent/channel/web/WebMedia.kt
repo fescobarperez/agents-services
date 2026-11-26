@@ -25,6 +25,16 @@ class WebMediaArchivo(
     val bytes: ByteArray,
 )
 
+/** Un archivo del chat web sin sus bytes. */
+data class WebMediaDatos(
+    val id: String,
+    val widgetKey: String,
+    val sessionRef: String,
+    val kind: String,
+    val mimeType: String,
+    val fileName: String?,
+)
+
 /** Algo que el visitante recibe despues de su turno (un render, un aviso). */
 data class WebEntrega(
     val id: Long,
@@ -89,6 +99,26 @@ open class WebMediaRepository(
                 mimeType = rs.getString("mime_type"),
                 fileName = rs.getString("file_name"),
                 bytes = rs.getBytes("content"),
+            ))
+        }.firstOrNull()
+    }
+
+    /** Lo que se sabe de un archivo sin traer sus bytes (para saber si sigue vigente y de quien es). Null si vencio. */
+    @Transactional(readOnly = true)
+    open fun leerDatos(id: String): WebMediaDatos? {
+        if (!ID.matches(id)) return null
+        return jdbc.prepareStatement(
+            "SELECT id, widget_key, session_ref, kind, mime_type, file_name FROM web_media WHERE id = ? AND expires_at > now()",
+        ) { st ->
+            st.setString(1, id)
+            val rs = st.executeQuery()
+            if (!rs.next()) emptyList<WebMediaDatos>() else listOf(WebMediaDatos(
+                id = rs.getString("id"),
+                widgetKey = rs.getString("widget_key"),
+                sessionRef = rs.getString("session_ref"),
+                kind = rs.getString("kind"),
+                mimeType = rs.getString("mime_type"),
+                fileName = rs.getString("file_name"),
             ))
         }.firstOrNull()
     }

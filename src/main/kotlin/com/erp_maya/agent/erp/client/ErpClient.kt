@@ -1,6 +1,9 @@
 package com.erp_maya.agent.erp.client
 
 import com.erp_maya.agent.erp.domain.AiLimit
+import com.erp_maya.agent.erp.domain.CatalogCategory
+import com.erp_maya.agent.erp.domain.CatalogProduct
+import com.erp_maya.agent.erp.domain.ProductImageData
 import com.erp_maya.agent.erp.domain.ProductTemplate
 import com.erp_maya.agent.erp.domain.TemplateItemWrite
 import com.erp_maya.agent.erp.domain.CompanyInfo
@@ -12,6 +15,8 @@ import com.erp_maya.agent.erp.domain.ErpQuote
 import com.erp_maya.agent.erp.domain.ErpClientPrices
 import com.erp_maya.agent.erp.domain.ErpPreviewLine
 import com.erp_maya.agent.erp.domain.ErpPreviewPrices
+import com.erp_maya.agent.erp.domain.ErpPreviewScenario
+import com.erp_maya.agent.erp.domain.ErpScenarioPrices
 import com.erp_maya.agent.erp.domain.ErpChangeRequest
 import com.erp_maya.agent.erp.domain.ChangeRequestWrite
 import com.erp_maya.agent.erp.domain.ErpQuoteSummary
@@ -117,6 +122,18 @@ interface ErpClient {
     fun getProduct(tenantId: Long, conversationId: Long, productId: Long): ProductSummary? =
         throw ErpException("getProduct no implementado")
 
+    /** Las categorias del catalogo de la empresa. */
+    fun categories(tenantId: Long, conversationId: Long): List<CatalogCategory> =
+        throw ErpException("categories no implementado")
+
+    /** Los productos vendibles de una categoria y de sus subcategorias, hasta `limit`. */
+    fun productsInCategory(tenantId: Long, conversationId: Long, categoryId: Long, limit: Int): List<CatalogProduct> =
+        throw ErpException("productsInCategory no implementado")
+
+    /** La foto de un producto, completa o miniatura; null si no tiene. */
+    fun productImage(tenantId: Long, conversationId: Long, productId: Long, thumb: Boolean): ProductImageData? =
+        throw ErpException("productImage no implementado")
+
     /**
      * Propone un producto que no esta en el catalogo. El ERP lo crea sin
      * precio y pendiente de revision, o devuelve el que ya exista con ese nombre.
@@ -148,6 +165,14 @@ interface ErpClient {
     /** Precios al cliente de productos en espera (aun sin cotizacion), con los cargos de la empresa dentro. */
     fun previewClientPrices(tenantId: Long, conversationId: Long, lines: List<ErpPreviewLine>): ErpPreviewPrices? =
         throw ErpException("previewClientPrices no implementado")
+
+    /**
+     * Varias vistas previas en una llamada (planificador: una opcion y sus
+     * variantes). Cada escenario lleva sus cargos; uno invalido vuelve con
+     * `error` sin tumbar a los demas.
+     */
+    fun previewClientPricesBatch(tenantId: Long, conversationId: Long, scenarios: List<ErpPreviewScenario>): List<ErpScenarioPrices> =
+        throw ErpException("previewClientPricesBatch no implementado")
 
     /** Reemplaza las lineas: las que no vengan se eliminan; sin id son nuevas. */
     fun updateQuoteLines(tenantId: Long, conversationId: Long, quote: ErpQuote, lines: List<QuoteLineWrite>): ErpQuote =

@@ -19,6 +19,8 @@ data class WebConfigView(
     val showPrices: Boolean = true,
     /** Moneda de los montos del carrito (ISO 4217), del locale de la empresa. */
     val currency: String = "GTQ",
+    /** A donde enlaza la firma «Con tecnología de Corvex»; null = solo texto. */
+    val poweredByUrl: String? = null,
 )
 
 /** Un mensaje del visitante. `session` e `id` los genera el widget (aleatorios). */

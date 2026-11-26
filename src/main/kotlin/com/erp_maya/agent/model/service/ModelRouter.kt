@@ -111,6 +111,12 @@ open class ModelRouter(proveedores: List<ModelProvider>) {
         return proveedor.editImage(model, instrucciones, foto, timeoutMs)
     }
 
+    /** Render sin foto base: un solo intento con el modelo de imagenes del agente. */
+    open fun generateImage(model: ModelRef, instrucciones: String, timeoutMs: Int): ImagenGenerada {
+        val proveedor = porCodigo[model.providerCode] ?: throw UnknownProviderException(model.providerCode)
+        return proveedor.generateImage(model, instrucciones, timeoutMs)
+    }
+
     private fun invocar(
         model: ModelRef,
         prompt: ModelPrompt,

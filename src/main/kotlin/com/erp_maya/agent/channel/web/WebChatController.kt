@@ -151,57 +151,22 @@ open class WebChatController(
     @Options("/{key}/media")
     @Suppress("UNUSED_PARAMETER")
     open fun uploadPreflight(@PathVariable key: String, @Header("Origin") origin: String?): MutableHttpResponse<Any> =
-        cors(HttpResponse.noContent<Any>(), origin)
-            .header("Access-Control-Allow-Methods", "POST, OPTIONS")
-            .header("Access-Control-Allow-Headers", "Content-Type")
-            .header("Access-Control-Max-Age", "600")
+        WebHttp.preflight(origin)
 
     @Options("/{key}/contact")
     @Suppress("UNUSED_PARAMETER")
     open fun contactPreflight(@PathVariable key: String, @Header("Origin") origin: String?): MutableHttpResponse<Any> =
-        cors(HttpResponse.noContent<Any>(), origin)
-            .header("Access-Control-Allow-Methods", "POST, OPTIONS")
-            .header("Access-Control-Allow-Headers", "Content-Type")
-            .header("Access-Control-Max-Age", "600")
+        WebHttp.preflight(origin)
 
     @Options("/{key}/messages")
     @Suppress("UNUSED_PARAMETER")
     open fun preflight(@PathVariable key: String, @Header("Origin") origin: String?): MutableHttpResponse<Any> =
-        cors(HttpResponse.noContent<Any>(), origin)
-            .header("Access-Control-Allow-Methods", "POST, OPTIONS")
-            .header("Access-Control-Allow-Headers", "Content-Type")
-            .header("Access-Control-Max-Age", "600")
+        WebHttp.preflight(origin)
 
-    private fun responder(origin: String?, accion: () -> Any): MutableHttpResponse<Any> = try {
-        cors(HttpResponse.ok<Any>(accion()), origin)
-    } catch (e: WebException) {
-        val r = HttpResponse.status<Any>(HttpStatus.valueOf(e.status)).body<Any>(WebError(e.code, e.message))
-        e.retryAfter?.let { r.header("Retry-After", it.toString()) }
-        cors(r, origin)
-    } catch (e: Exception) {
-        log.error("fallo el canal web", e)
-        cors(
-            HttpResponse.serverError<Any>().body<Any>(WebError("ERROR", "No pude responder. Intenta de nuevo en un momento.")),
-            origin,
-        )
-    }
+    private fun responder(origin: String?, accion: () -> Any): MutableHttpResponse<Any> =
+        WebHttp.responder(origin, log, "el canal web", accion)
 
-    /**
-     * Se refleja el origen tal cual: si no estaba permitido, el servicio ya
-     * respondio 403 y el navegador igual vera el error (no hay datos que filtrar).
-     */
-    private fun <T : Any> cors(r: MutableHttpResponse<T>, origin: String?): MutableHttpResponse<T> {
-        if (!origin.isNullOrBlank()) r.header("Access-Control-Allow-Origin", origin)
-        r.header("Vary", "Origin")
-        return r
-    }
-
-    private fun ip(request: HttpRequest<Any>): String {
-        if (confiarProxy) {
-            request.headers.get("X-Forwarded-For")?.split(',')?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-        }
-        return request.remoteAddress.address?.hostAddress ?: "desconocida"
-    }
+    private fun ip(request: HttpRequest<Any>): String = WebHttp.ip(request, confiarProxy)
 
     private companion object {
         private val log = LoggerFactory.getLogger(WebChatController::class.java)

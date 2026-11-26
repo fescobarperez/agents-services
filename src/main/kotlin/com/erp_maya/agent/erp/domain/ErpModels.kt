@@ -391,10 +391,40 @@ data class ErpPreviewLine(
     @Nullable val height: BigDecimal? = null,
     @Nullable val width: BigDecimal? = null,
     @Nullable val depth: BigDecimal? = null,
+    /**
+     * Con plantilla, el ERP calcula la linea como al agregarla a la
+     * cotizacion (`lineTotal` se ignora). Los costos no salen del ERP.
+     */
+    @Nullable val templateId: Long? = null,
+    @Nullable val params: Map<String, BigDecimal>? = null,
+    @Nullable val choices: Map<String, String>? = null,
+    @Nullable val preset: String? = null,
 )
 
 @Serdeable
 data class ErpPreviewRequest(val lines: List<ErpPreviewLine>)
+
+/** Un escenario de la vista previa por lotes: cada uno se valora solo, con sus propios cargos. */
+@Serdeable
+data class ErpPreviewScenario(val key: String, val lines: List<ErpPreviewLine>)
+
+@Serdeable
+data class ErpPreviewBatchRequest(val scenarios: List<ErpPreviewScenario>)
+
+/** POST /api/quotes/client-prices/preview/batch. */
+@Serdeable
+data class ErpPreviewBatch(val scenarios: List<ErpScenarioPrices> = emptyList())
+
+/** Los precios de un escenario; si el ERP no lo pudo valorar, montos nulos y `error` con el motivo. */
+@Serdeable
+data class ErpScenarioPrices(
+    val key: String,
+    @Nullable val subtotal: BigDecimal? = null,
+    @Nullable val tax: BigDecimal? = null,
+    @Nullable val total: BigDecimal? = null,
+    val lines: List<ErpPreviewPrice> = emptyList(),
+    @Nullable val error: String? = null,
+)
 
 /**
  * Vista previa (POST /api/quotes/client-prices/preview): con los cargos,
@@ -416,3 +446,32 @@ data class ErpPreviewPrice(
     /** La medida se sale de la tolerancia: el precio lo pone un asesor. */
     val review: Boolean = false,
 )
+
+// ── catalogo por categorias (planificador) ──────────────────────────────────
+
+/** Una categoria del catalogo del ERP (GET /api/categories). `parentId` null = categoria raiz. */
+@Serdeable
+data class CatalogCategory(val id: Long, val name: String, @Nullable val parentId: Long? = null)
+
+/**
+ * Un producto como lo muestra el planificador: con su categoria, su
+ * descripcion (de ahi saca el agente de que esta hecho) y la version de su
+ * foto (null = sin foto). Sin costos.
+ */
+@Serdeable
+data class CatalogProduct(
+    val id: Long,
+    val sku: String,
+    val name: String,
+    @Nullable val price: BigDecimal? = null,
+    @Nullable val unit: String? = null,
+    @Nullable val categoryId: Long? = null,
+    @Nullable val categoryName: String? = null,
+    @Nullable val description: String? = null,
+    @Nullable val imageVersion: Long? = null,
+    @Nullable val status: String? = null,
+    @Nullable val itemType: String? = null,
+)
+
+/** La foto de un producto tal como la guarda el ERP (ya reducida al subirla). */
+class ProductImageData(val mime: String, val bytes: ByteArray)

@@ -95,6 +95,8 @@ whatsapp:
 # con ella la consola arma el <script> que pega la empresa.
 web:
   public-url: ${AGENT_PUBLIC_URL:}
+  # A donde lleva la firma «Con tecnología de Corvex» de los widgets. Vacio: solo texto.
+  powered-by-url: ${AGENT_POWERED_BY_URL:`https://corvex.com.gt`}
   # Detras del proxy la IP real viene en X-Forwarded-For.
   trust-forwarded: ${WEB_TRUST_FORWARDED:true}
   # Lo que puede hacer el agente en la web (sin api-key: la llamada no sale del proceso).
@@ -107,6 +109,33 @@ web:
     session-per-minute: 10
     ip-per-minute: 30
     widget-per-minute: 120
+
+# Planificador por presupuesto (/v1/planner). Lo de negocio (tipos de
+# proyecto, umbral de "justo", renders, retencion, maximo de opciones) es de
+# cada planificador y se configura en la consola; aqui solo lo operativo.
+planner:
+  # Limites por minuto: cada opcion es una llamada al ERP.
+  rate:
+    sessions-per-ip: 5
+    options-per-session: 6
+    options-per-ip: 20
+    options-per-widget: 120
+    reads-per-session: 60
+    # Mensajes al agente (cada uno gasta el modelo de la empresa).
+    messages-per-session: 10
+    messages-per-ip: 30
+    messages-per-widget: 120
+    # Fotos del espacio por sesion y minuto.
+    photos-per-session: 6
+    # Tope tecnico de renders por dia (el de negocio es el del playbook, por diseño):
+    # frena a quien empieza diseños nuevos solo para tener mas renders.
+    renders-per-ip-day: 15
+    renders-per-widget-day: 300
+  # Variantes de un cambio que se valoran con cada opcion (para la sugerencia de "se pasa por").
+  max-variants: 8
+  # Cuanto se guarda en memoria el producto y la plantilla de cada tipo.
+  template-cache-ttl: 5m
+  cleanup-interval: 1h
 
 # Servicio externo. Las rutas concretas aun no estan validadas contra
 # maya-erp-services: van marcadas con TODO en ErpClient.

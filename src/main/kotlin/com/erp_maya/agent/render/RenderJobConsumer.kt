@@ -1,5 +1,6 @@
 package com.erp_maya.agent.render
 
+import com.erp_maya.agent.channel.planner.PlannerSessionRepository
 import com.erp_maya.agent.channel.web.WebChatService
 import com.erp_maya.agent.channel.web.WebMediaRepository
 import com.erp_maya.agent.channel.whatsapp.client.MediaNoDisponibleException
@@ -36,6 +37,8 @@ open class RenderJobConsumer(
     private val conversaciones: ConversationService,
     /** Los renders del chat web: foto base y resultado viven aqui, no en Meta. */
     private val web: WebMediaRepository,
+    /** Los renders del planificador: quedan en su opcion, no en una bandeja. */
+    private val planificador: PlannerSessionRepository,
     @param:Value("\${renders.consumer.enabled:true}") private val habilitado: Boolean,
     @param:Value("\${renders.timeout-ms:120000}") private val timeoutMs: Int,
 ) {
@@ -61,6 +64,7 @@ open class RenderJobConsumer(
     }
 
     private fun atender(job: RenderJob) {
+        destinoPlanificador(job)?.let { atenderPlanificador(job, it); return }
         val modelo = trabajos.modelo(job.modelId)
         if (modelo == null) {
             terminarConAviso(job, "el modelo de imagenes ${job.modelId} ya no esta activo", MENSAJE_FALLO)
@@ -123,6 +127,57 @@ open class RenderJobConsumer(
         }.onFailure { log.warn("no se pudo avisar del render {} perdido: {}", job.id, it.message) }
     }
 
+    /**
+     * Render del planificador: sobre la foto del espacio si la hay; si no, se
+     * genera desde cero. Queda en web_media y en su opcion (el widget la ve al
+     * consultar el estado). Fallido, no cuenta contra el tope del diseño.
+     */
+    private fun atenderPlanificador(job: RenderJob, destino: Pair<String, String>) {
+        val modelo = trabajos.modelo(job.modelId)
+            ?: return perderPlanificador(job, "el modelo de imagenes ${job.modelId} ya no esta activo")
+        try {
+            val ref = ModelRef(modelo.id, modelo.providerCode, modelo.modelName, 0, supportsTools = false, supportsCache = false)
+            val render = if (job.baseMediaId.isBlank()) {
+                router.generateImage(ref, job.prompt, timeoutMs)
+            } else {
+                val base = web.leer(job.baseMediaId)?.bytes ?: throw MediaNoDisponibleException(job.baseMediaId, "vencida en el planificador")
+                router.editImage(ref, job.prompt, imagenes.preparar(base), timeoutMs)
+            }
+            val id = web.guardar(destino.first, destino.second, WebChatService.KIND_IMAGEN, render.mimeType, "render-${job.id}.png", render.bytes)
+            planificador.renderListo(job.id, id)
+            // Queda en el hilo para que el agente sepa que el visitante ya lo ve.
+            conversaciones.registrarAviso(job.conversationId, "planner:render:${job.id}", "[Render ${job.renderNumber} de ${job.renderMax} listo en el planificador]")
+            trabajos.terminar(job.id, id, "planner:$id", modelo.imageCost)
+            log.info("render {} del planificador listo (conversacion {}, {} de {})", job.id, job.conversationId, job.renderNumber, job.renderMax)
+        } catch (e: MediaNoDisponibleException) {
+            perderPlanificador(job, e.message ?: "foto no disponible")
+        } catch (e: ImagenNoSoportadaException) {
+            perderPlanificador(job, e.message ?: "foto no soportada")
+        } catch (e: Exception) {
+            val detalle = "${e.javaClass.simpleName}: ${e.message.orEmpty()}"
+            if (job.attempts < MAX_INTENTOS) {
+                log.warn("render {} del planificador fallo (intento {}): {}; se reintenta", job.id, job.attempts, detalle)
+                trabajos.reintentar(job.id, ESPERA_SEGUNDOS * job.attempts, detalle)
+            } else {
+                perderPlanificador(job, detalle)
+            }
+        }
+    }
+
+    private fun perderPlanificador(job: RenderJob, error: String) {
+        log.warn("render {} del planificador perdido: {}", job.id, error)
+        trabajos.fallar(job.id, error)
+        runCatching { planificador.renderFallido(job.id) }
+            .onFailure { log.warn("no se pudo marcar el render {} como fallido: {}", job.id, it.message) }
+    }
+
+    /** Llave del planificador y su sesion si el render es del planificador; null si no. */
+    private fun destinoPlanificador(job: RenderJob): Pair<String, String>? {
+        if (!job.accountRef.startsWith(PLANIFICADOR)) return null
+        val sesion = web.sesionDe(job.conversationId) ?: error("la conversacion ${job.conversationId} no tiene sesion del planificador")
+        return job.accountRef.removePrefix(PLANIFICADOR) to sesion
+    }
+
     /** Llave del widget y sesion si el render es del chat web; null si es de WhatsApp. */
     private fun destinoWeb(job: RenderJob): Pair<String, String>? {
         if (!job.accountRef.startsWith(WEB)) return null
@@ -132,6 +187,7 @@ open class RenderJobConsumer(
 
     companion object {
         private const val WEB = "web:"
+        private const val PLANIFICADOR = "planner:"
         private val log = LoggerFactory.getLogger(RenderJobConsumer::class.java)
 
         private const val LOTE = 2

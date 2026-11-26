@@ -402,6 +402,82 @@ class ToolCatalog {
                 ToolParameter("total", "number", true, "Total confirmado, debe coincidir con el preview"),
             ),
         ),
+
+        // ── planificador por presupuesto (canal planner) ──
+        // Cambian la sesion del planificador, no el ERP: el precio sale de la
+        // vista previa y nada se emite. Por eso son de lectura para la compuerta.
+        ToolDefinition(
+            name = "planificador.tipo",
+            mode = ToolMode.READ,
+            description = "Lo que se puede elegir en un tipo de proyecto del planificador: medidas (code, unidad, minimo, " +
+                "maximo, por defecto), opciones de diseño con sus elecciones y paquetes. Usa sus code en planificador.opcion.",
+            parameters = listOf(ToolParameter("tipo", "string", true, "Code del tipo de proyecto (p. ej. pergola)")),
+        ),
+        ToolDefinition(
+            name = "planificador.productos",
+            mode = ToolMode.READ,
+            description = "Sin categoria: las categorias del planificador. Con categoria: sus productos (tipo, nombre, precio " +
+                "de referencia por unidad y de que se trata). Para armar una opcion de un producto usa su tipo (p. ej. p7) " +
+                "en planificador.opcion.",
+            parameters = listOf(ToolParameter("categoria", "integer", false, "Id de la categoria")),
+        ),
+        ToolDefinition(
+            name = "planificador.opcion",
+            mode = ToolMode.READ,
+            description = "Crea una opcion nueva (A, B, C…) con su precio total real y el semaforo contra el presupuesto. " +
+                "La primera nace de la idea del visitante; cada cambio que pida crea otra a partir de la que esta viendo " +
+                "(desde=letra) sin borrar las anteriores. Manda solo lo que cambia: lo demas se queda como en la opcion " +
+                "de origen o por defecto.",
+            parameters = listOf(
+                ToolParameter("desde", "string", false, "Letra de la opcion de la que parte (la activa, si es un cambio)"),
+                ToolParameter("tipo", "string", false, "Code del tipo de proyecto o del producto (p. ej. p7); por defecto el de la sesion"),
+                ToolParameter("medidas", "string", false, "Medidas por code, p. ej. 'ancho=4; profundidad=3; alto=2.4'. " +
+                    "En un producto que se vende por m², ancho y profundidad dan el area (la cantidad)"),
+                ToolParameter("opciones", "string", false, "Elecciones por code de opcion, p. ej. 'techo=dos_aguas; cubierta=teja'"),
+                ToolParameter("paquete", "string", false, "Code del paquete (p. ej. premium); vacio lo quita"),
+                ToolParameter("cantidad", "number", false, "Cuantas unidades iguales (por defecto 1)"),
+                ToolParameter("titulo", "string", false, "Titulo corto de la opcion, si el de por defecto no la describe bien"),
+            ),
+        ),
+        ToolDefinition(
+            name = "planificador.activar",
+            mode = ToolMode.READ,
+            description = "Vuelve a una opcion que ya existe (p. ej. 'volvamos a la A'): queda activa y los cambios siguientes parten de ella.",
+            parameters = listOf(ToolParameter("letra", "string", true, "Letra de la opcion")),
+        ),
+        ToolDefinition(
+            name = "planificador.render",
+            mode = ToolMode.READ,
+            description = "Pide el render (imagen ilustrativa) de una opcion cuando el visitante lo pide en el chat; " +
+                "es lo mismo que el boton «Ver render». Hay un tope por diseño: no lo uses sin que lo pida. Llega en unos segundos.",
+            parameters = listOf(ToolParameter("letra", "string", true, "Letra de la opcion (la activa, si no dice otra)")),
+        ),
+        ToolDefinition(
+            name = "planificador.presupuesto",
+            mode = ToolMode.READ,
+            description = "Guarda el monto total que el visitante quiere invertir cuando lo dice en el chat. Recalcula el semaforo de todas las opciones.",
+            parameters = listOf(ToolParameter("monto", "number", true, "Monto total, solo el numero (p. ej. 20000)")),
+        ),
+        ToolDefinition(
+            name = "planificador.anotar",
+            mode = ToolMode.READ,
+            description = "Anota un detalle del proyecto que NO cambia el precio (uso, ubicacion, gustos). Un valor vacio lo borra.",
+            parameters = listOf(
+                ToolParameter("clave", "string", true, "Clave corta en minusculas, p. ej. uso"),
+                ToolParameter("valor", "string", false, "Lo que dijo el visitante, p. ej. Patio trasero"),
+            ),
+        ),
+        ToolDefinition(
+            name = "planificador.preguntar",
+            mode = ToolMode.READ,
+            description = "Pone botones de respuesta rapida bajo tu mensaje. Con opcion (code de una opcion de diseño) " +
+                "muestra sus elecciones y al tocar una se crea la opcion con ese cambio, sin que escriba. Con " +
+                "respuestas, textos cortos separados por ';'. Usa uno de los dos.",
+            parameters = listOf(
+                ToolParameter("opcion", "string", false, "Code de la opcion de diseño a elegir (p. ej. techo)"),
+                ToolParameter("respuestas", "string", false, "Respuestas cortas separadas por ';' (maximo 3)"),
+            ),
+        ),
     )
 
     private val porNombre = todas.associateBy { it.name }

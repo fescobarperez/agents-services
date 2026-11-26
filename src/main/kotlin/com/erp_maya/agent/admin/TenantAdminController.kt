@@ -94,6 +94,23 @@ open class TenantAdminController(
         return service.updateWebChannel(tenantId, channelId, body)
     }
 
+    @Post("/planner-widgets", consumes = [MediaType.APPLICATION_JSON])
+    open fun createPlanner(@Header(API_KEY) apiKey: String?, @PathVariable tenantId: Long, @Body body: Map<String, Any?>): HttpResponse<TenantAiView> {
+        guard.autorizar(apiKey)
+        return HttpResponse.created(service.createPlannerWidget(tenantId, body))
+    }
+
+    @Patch("/planner-widgets/{channelId}", consumes = [MediaType.APPLICATION_JSON])
+    open fun updatePlanner(
+        @Header(API_KEY) apiKey: String?,
+        @PathVariable tenantId: Long,
+        @PathVariable channelId: Long,
+        @Body body: Map<String, Any?>,
+    ): TenantAiView {
+        guard.autorizar(apiKey)
+        return service.updatePlannerWidget(tenantId, channelId, body)
+    }
+
     @Get("/agents/{id}/instructions")
     open fun instructions(@Header(API_KEY) apiKey: String?, @PathVariable tenantId: Long, @PathVariable id: Long): List<PromptVersionView> {
         guard.autorizar(apiKey)

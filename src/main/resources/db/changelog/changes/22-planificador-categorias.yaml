@@ -1,0 +1,18 @@
+databaseChangeLog:
+  # ══════════════════════════════════════════════════════════════════════
+  # Planificador por categorias del ERP: el visitante elige una categoria y
+  # luego un producto de la lista (con su foto). Cada categoria trae tambien
+  # lo de sus subcategorias. Convive con project_types (tipos fijos).
+  # ══════════════════════════════════════════════════════════════════════
+  - changeSet:
+      id: 220-planner-widgets-categorias
+      author: stackline
+      comment: Categorias del ERP que muestra cada planificador.
+      changes:
+        - addColumn:
+            tableName: planner_widgets
+            columns:
+              # [categoryId, ...] del ERP, en el orden en que se muestran.
+              - column: { name: category_ids, type: JSONB, defaultValueComputed: "'[]'::jsonb", constraints: { nullable: false } }
+      rollback:
+        - dropColumn: { tableName: planner_widgets, columnName: category_ids }

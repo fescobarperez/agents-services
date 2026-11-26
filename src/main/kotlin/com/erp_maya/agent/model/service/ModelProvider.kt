@@ -48,4 +48,11 @@ interface ModelProvider {
      */
     fun editImage(model: ModelRef, instrucciones: String, foto: ImagenParaModelo, timeoutMs: Int): ImagenGenerada =
         throw ModelCallException("El proveedor '$providerCode' no edita imagenes")
+
+    /**
+     * Genera una imagen desde cero segun las instrucciones (el render del
+     * planificador cuando el visitante no subio foto de su espacio).
+     */
+    fun generateImage(model: ModelRef, instrucciones: String, timeoutMs: Int): ImagenGenerada =
+        throw ModelCallException("El proveedor '$providerCode' no genera imagenes")
 }

@@ -4,6 +4,7 @@ import com.erp_maya.agent.context.domain.ModelRef
 import com.erp_maya.agent.model.client.OpenAiContentPart
 import com.erp_maya.agent.model.client.OpenAiFunction
 import com.erp_maya.agent.model.client.OpenAiFunctionCall
+import com.erp_maya.agent.model.client.OpenAiImageGeneration
 import com.erp_maya.agent.model.client.OpenAiImageResponse
 import com.erp_maya.agent.model.client.OpenAiMessage
 import com.erp_maya.agent.model.client.OpenAiPartsMessage
@@ -201,6 +202,36 @@ abstract class OpenAiCompatibleModelProvider(
         return ImagenGenerada(Base64.getDecoder().decode(b64), "image/png")
     }
 
+    /**
+     * `POST {base_url}/images/generations`: el render del planificador cuando
+     * no hay foto del espacio. Horizontal (cabe en el area del render) y
+     * calidad media, como la edicion.
+     */
+    override fun generateImage(model: ModelRef, instrucciones: String, timeoutMs: Int): ImagenGenerada {
+        val proveedor = proveedores.byCode(providerCode)
+            ?: throw ModelCallException("El proveedor '$providerCode' no esta configurado o esta inactivo")
+        val cuerpo = json.writeValueAsString(OpenAiImageGeneration(model.modelName, instrucciones, TAMANO_GENERADA, "medium"))
+        val crudo = try {
+            clientes.postJson(
+                url = "${proveedor.baseUrl}/images/generations",
+                bearer = credenciales.secretFor(proveedor),
+                json = cuerpo,
+                timeout = Duration.ofMillis(timeoutMs.toLong().coerceAtLeast(10_000)),
+            )
+        } catch (e: Exception) {
+            log.warn("fallo de {} generando imagen con {}: {} {}", providerCode, model.modelName, e.javaClass.simpleName, e.message)
+            throw ModelCallException("El proveedor '$providerCode' no respondio", e)
+        }
+        if (crudo.status !in 200..299) {
+            log.warn("{} respondio {} generando imagen con {}: {}", providerCode, crudo.status, model.modelName, crudo.body.take(500))
+            throw ModelCallException("El proveedor '$providerCode' respondio ${crudo.status}")
+        }
+        val b64 = runCatching { json.readValue(crudo.body, OpenAiImageResponse::class.java) }.getOrNull()
+            ?.data?.firstOrNull()?.b64Json
+            ?: throw ModelCallException("El proveedor '$providerCode' no devolvio la imagen")
+        return ImagenGenerada(Base64.getDecoder().decode(b64), "image/png")
+    }
+
     private fun traducir(m: PromptMessage) = OpenAiMessage(
         role = m.role.name.lowercase(),
         content = m.content,
@@ -244,6 +275,8 @@ abstract class OpenAiCompatibleModelProvider(
     private companion object {
         private val log = LoggerFactory.getLogger(OpenAiCompatibleModelProvider::class.java)
         private const val MAX_TOKENS_POR_DEFECTO = 4096
+        /** Render generado (sin foto base): horizontal, como el area del render del planificador. */
+        private const val TAMANO_GENERADA = "1536x1024"
     }
 }
 

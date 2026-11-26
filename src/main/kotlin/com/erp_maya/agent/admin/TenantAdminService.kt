@@ -1,6 +1,11 @@
 package com.erp_maya.agent.admin
 
+import com.erp_maya.agent.channel.planner.PlannerCatalog
+import com.erp_maya.agent.channel.planner.ProjectType
 import com.erp_maya.agent.channel.web.WebChatService
+import com.erp_maya.agent.erp.client.ErpClient
+import com.erp_maya.agent.erp.domain.ErpException
+import io.micronaut.core.type.Argument
 import com.erp_maya.agent.channel.whatsapp.client.WaNumero
 import com.erp_maya.agent.channel.whatsapp.client.WaNumeroError
 import com.erp_maya.agent.channel.whatsapp.client.WhatsAppCloudClient
@@ -31,11 +36,15 @@ open class TenantAdminService(
     private val playbooks: PlaybookService,
     private val json: ObjectMapper,
     private val whatsapp: WhatsAppCloudClient,
+    private val erp: ErpClient,
     @param:Value("\${web.public-url:}") private val publicUrl: String,
 ) {
 
     /** Donde se sirve el widget (lo pega la empresa en su pagina). Nulo si no esta configurado. */
     private val scriptUrl: String? = publicUrl.trim().trimEnd('/').takeIf { it.isNotEmpty() }?.let { "$it/v1/web/widget.js" }
+
+    /** Donde se sirve el planificador (`embed.js`). Nulo si no esta configurado. */
+    private val plannerScriptUrl: String? = publicUrl.trim().trimEnd('/').takeIf { it.isNotEmpty() }?.let { "$it/v1/planner/embed.js" }
 
     @Transactional(readOnly = true)
     open fun view(tenantId: Long): TenantAiView {
@@ -61,7 +70,25 @@ open class TenantAdminService(
                     it.tenantAgentId, it.createdAt.toString(), it.showPrices)
             },
             widgetScriptUrl = scriptUrl,
+            plannerWidgets = repo.plannerWidgets(tenantId).map { p ->
+                PlannerWidgetView(
+                    p.id, p.name, p.publicKey, p.origins, p.title, p.accentColor, p.lang,
+                    tiposDe(p.projectTypesJson).map { PlannerProjectTypeView(it.code, it.label, it.productId) },
+                    p.fitThresholdPct, p.retentionDays, p.maxOptions, p.contactWhatsapp, p.active, p.tenantAgentId,
+                    p.createdAt.toString(), categoriasDe(p.categoryIdsJson),
+                )
+            },
+            plannerScriptUrl = plannerScriptUrl,
+            catalogCategories = catalogo(tenantId),
         )
+    }
+
+    /** Las categorias del ERP de la empresa para elegir en el planificador. Null si el ERP no responde: la vista igual carga. */
+    private fun catalogo(tenantId: Long): List<CatalogCategoryView>? = try {
+        erp.categories(tenantId, PlannerCatalog.SIN_CONVERSACION).map { CatalogCategoryView(it.id, it.name, it.parentId) }
+    } catch (e: ErpException) {
+        log.warn("sin categorias del ERP para la empresa {}: {}", tenantId, e.message)
+        null
     }
 
     // ── numeros de WhatsApp (de la cuenta de Stackline en Meta) ─────────────
@@ -180,6 +207,101 @@ open class TenantAdminService(
         log.info("widget web actualizado empresa={} canal={} campos={}", tenantId, channelId, body.keys)
         return view(tenantId)
     }
+
+    // ── planificadores por presupuesto (canal `planner`) ────────────────────
+
+    /**
+     * Crea un planificador: {name, allowedOrigins, projectTypes:[{code,label,productId}],
+     * title?, accentColor?, lang?, fitThresholdPct?, retentionDays?, maxOptions?, contactWhatsapp?,
+     * tenantAgentId?}. Cada producto se verifica en el ERP de la empresa.
+     */
+    @Transactional
+    open fun createPlannerWidget(tenantId: Long, body: Map<String, Any?>): TenantAiView {
+        val (draft, f) = PlannerWidgetRules.validar(body, null)
+        val agente = agenteParaCanal(tenantId, body, f)
+        if (draft == null || f.isNotEmpty()) throw AdminException.validation(f)
+        verificarProductos(tenantId, draft.projectTypes)
+        verificarCategorias(tenantId, draft.categoryIds)
+        val llave = PlannerWidgetRules.nuevaLlave()
+        val id = repo.insertPlannerWidget(
+            tenantId, llave, json.writeValueAsString(CAPACIDADES_PLANIFICADOR), draft,
+            json.writeValueAsString(draft.origins), json.writeValueAsString(draft.projectTypes),
+            json.writeValueAsString(draft.categoryIds),
+        )
+        agente?.let { repo.assign(id, tenantId, it.agentId, it.id) }
+        adminService.invalidar()
+        log.info("planificador creado empresa={} canal={} tipos={} agente={}", tenantId, id, draft.projectTypes.map { it.code }, agente?.id)
+        return view(tenantId)
+    }
+
+    /**
+     * Edita un planificador; lo que no venga se conserva, {active} lo apaga o
+     * enciende y {tenantAgentId} cambia quien lo atiende (null = nadie).
+     */
+    @Transactional
+    open fun updatePlannerWidget(tenantId: Long, channelId: Long, body: Map<String, Any?>): TenantAiView {
+        val p = repo.plannerWidgets(tenantId).firstOrNull { it.id == channelId }
+            ?: throw AdminException.notFound("El planificador no existe en esta empresa")
+        val actual = PlannerWidgetRules.Draft(
+            p.name, p.origins, p.title, p.accentColor, p.lang, tiposDe(p.projectTypesJson),
+            p.fitThresholdPct, p.retentionDays, p.maxOptions, p.contactWhatsapp, categoriasDe(p.categoryIdsJson),
+        )
+        val (draft, errores) = PlannerWidgetRules.validar(body, actual)
+        val activo = if (body.containsKey("active")) Parse.bool(body["active"]).also { if (it == null) errores["active"] = "Valor inválido" } else null
+        val agente = agenteParaCanal(tenantId, body, errores)
+        if (draft == null || errores.isNotEmpty()) throw AdminException.validation(errores)
+        // Solo los productos nuevos: los que ya estaban se verificaron al guardarlos.
+        verificarProductos(tenantId, draft.projectTypes.filter { t -> actual.projectTypes.none { it.productId == t.productId } })
+        verificarCategorias(tenantId, draft.categoryIds.filter { it !in actual.categoryIds })
+        repo.updatePlannerWidget(
+            channelId, draft, json.writeValueAsString(draft.origins), json.writeValueAsString(draft.projectTypes),
+            json.writeValueAsString(draft.categoryIds),
+        )
+        activo?.let { repo.setChannelActive(channelId, it) }
+        if (body.containsKey("tenantAgentId") && agente?.id != p.tenantAgentId) {
+            repo.endAssignments(channelId, tenantId)
+            agente?.let { repo.assign(channelId, tenantId, it.agentId, it.id) }
+        }
+        adminService.invalidar()
+        log.info("planificador actualizado empresa={} canal={} campos={}", tenantId, channelId, body.keys)
+        return view(tenantId)
+    }
+
+    /** Cada tipo de proyecto tiene que apuntar a un producto que exista en el ERP de ESTA empresa. */
+    private fun verificarProductos(tenantId: Long, tipos: List<ProjectType>) {
+        val f = linkedMapOf<String, String>()
+        for (t in tipos) {
+            val producto = try {
+                erp.getProduct(tenantId, PlannerCatalog.SIN_CONVERSACION, t.productId)
+            } catch (e: ErpException) {
+                throw AdminException(502, "ERP_UNAVAILABLE", "No se pudo consultar el catálogo del ERP: ${e.message}")
+            }
+            if (producto == null) {
+                f["projectTypes"] = "«${t.label}»: el producto ${t.productId} no existe en el ERP de la empresa"
+                break
+            }
+        }
+        if (f.isNotEmpty()) throw AdminException.validation(f)
+    }
+
+    /** Cada categoria tiene que existir en el ERP de ESTA empresa. */
+    private fun verificarCategorias(tenantId: Long, ids: List<Long>) {
+        if (ids.isEmpty()) return
+        val existentes = try {
+            erp.categories(tenantId, PlannerCatalog.SIN_CONVERSACION).map { it.id }.toSet()
+        } catch (e: ErpException) {
+            throw AdminException(502, "ERP_UNAVAILABLE", "No se pudo consultar el catálogo del ERP: ${e.message}")
+        }
+        ids.firstOrNull { it !in existentes }?.let {
+            throw AdminException.validation(mapOf("categoryIds" to "La categoría $it no existe en el ERP de la empresa"))
+        }
+    }
+
+    private fun categoriasDe(crudo: String?): List<Long> =
+        crudo?.let { runCatching { json.readValue(it, Argument.listOf(Long::class.javaObjectType)) }.getOrNull() }.orEmpty()
+
+    private fun tiposDe(crudo: String?): List<ProjectType> =
+        crudo?.let { runCatching { json.readValue(it, Argument.listOf(ProjectType::class.java)) }.getOrNull() }.orEmpty()
 
     /** El agente de la empresa que pide `tenantAgentId` (null si no viene o viene nulo). */
     private fun agenteParaCanal(tenantId: Long, body: Map<String, Any?>, f: MutableMap<String, String>): TenantAgentRow? {
@@ -431,5 +553,7 @@ open class TenantAdminService(
         const val NUMERO_CONECTADO = "connected"
         const val NUMERO_OCUPADO = "in_use"
         val CAPACIDADES_WHATSAPP = Capabilities(buttons = 3, markdown = false, maxChars = 4096, streaming = false)
+        /** El planificador: mensajes cortos y hasta 3 respuestas rapidas (la conversacion llega en la fase 2). */
+        val CAPACIDADES_PLANIFICADOR = Capabilities(buttons = 3, markdown = false, maxChars = 600, streaming = false)
     }
 }

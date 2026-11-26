@@ -277,6 +277,7 @@
     '@keyframes pop{50%{transform:scale(1.35)}}.badge.pop{animation:pop .4s ease}',
     '@media ' + ESTRECHO + '{.stage{position:relative}.wrap.abierto .cart.on:not(.min){display:none}.wrap.abierto .cart.on.show{display:flex;position:absolute;inset:0;width:auto;height:auto;z-index:4}}',
     '.foot{font-size:11px;color:#8b8186;text-align:center;padding:2px 0 8px;background:#fff}',
+    '.foot a{color:inherit;text-decoration:none}.foot a:hover{color:#3b3438;text-decoration:underline}',
     '@media (max-width:480px){.wrap.abierto .cart.on.show{position:fixed;border-radius:0;max-height:none}.wrap{bottom:' + (OFFSET == null ? 12 : OFFSET) + 'px;' + (LEFT ? 'left' : 'right') + ':12px}.panel.open{position:fixed;inset:0;width:auto;height:auto;max-height:none;border-radius:0}}',
   ].join('\n');
 
@@ -428,7 +429,16 @@
       actualizarBoton();
     });
 
-    var foot = el('div', 'foot'); foot.textContent = T.powered;
+    // La firma: enlace a Corvex (nueva pestaña) si el servicio trae la URL; si no, texto.
+    var foot = el('div', 'foot');
+    if (/^https:\/\//.test(config.poweredByUrl || '')) {
+      var firma = el('a');
+      firma.textContent = T.powered;
+      firma.href = config.poweredByUrl;
+      firma.target = '_blank';
+      firma.rel = 'noopener';
+      foot.appendChild(firma);
+    } else foot.textContent = T.powered;
 
     panel.appendChild(head); panel.appendChild(log); panel.appendChild(tray); panel.appendChild(compose); panel.appendChild(foot);
     if (config.maxImages > 0) {

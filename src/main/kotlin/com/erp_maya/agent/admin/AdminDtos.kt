@@ -234,7 +234,46 @@ data class TenantAiView(
     val webChannels: List<WebChannelView> = emptyList(),
     /** URL del script del widget; nula si falta `AGENT_PUBLIC_URL` en el servicio. */
     val widgetScriptUrl: String? = null,
+    val plannerWidgets: List<PlannerWidgetView> = emptyList(),
+    /** URL del script del planificador; nula si falta `AGENT_PUBLIC_URL` en el servicio. */
+    val plannerScriptUrl: String? = null,
+    /** Categorias del catalogo del ERP de la empresa, para elegir las del planificador; null si el ERP no respondio. */
+    val catalogCategories: List<CatalogCategoryView>? = null,
 )
+
+/** Una categoria del ERP de la empresa (`parentId` null = raiz). */
+@Serdeable
+@JsonInclude(JsonInclude.Include.ALWAYS)
+data class CatalogCategoryView(val id: Long, val name: String, val parentId: Long?)
+
+/** Planificador por presupuesto, como lo edita la consola. */
+@Serdeable
+@JsonInclude(JsonInclude.Include.ALWAYS)
+data class PlannerWidgetView(
+    val id: Long,
+    val name: String,
+    val publicKey: String,
+    val allowedOrigins: List<String>,
+    val title: String?,
+    val accentColor: String?,
+    val lang: String,
+    val projectTypes: List<PlannerProjectTypeView>,
+    val fitThresholdPct: BigDecimal,
+    val retentionDays: Int,
+    val maxOptions: Int,
+    /** WhatsApp del asesor (solo digitos); null = sin boton «Contactar a un asesor». */
+    val contactWhatsapp: String?,
+    val active: Boolean,
+    /** Agente de la empresa que lo atiende; null = nadie (las opciones y precios funcionan igual). */
+    val tenantAgentId: Long?,
+    val createdAt: String,
+    /** Categorias del ERP que muestra (el visitante elige producto de la lista). */
+    val categoryIds: List<Long> = emptyList(),
+)
+
+@Serdeable
+@JsonInclude(JsonInclude.Include.ALWAYS)
+data class PlannerProjectTypeView(val code: String, val label: String, val productId: Long)
 
 /** Error con `code` estable para la UI y `message` para la persona. */
 @Serdeable

@@ -44,3 +44,7 @@ databaseChangeLog:
       file: db/changelog/changes/19-web-media.yaml
   - include:
       file: db/changelog/changes/20-web-carrito.yaml
+  - include:
+      file: db/changelog/changes/21-planificador.yaml
+  - include:
+      file: db/changelog/changes/22-planificador-categorias.yaml

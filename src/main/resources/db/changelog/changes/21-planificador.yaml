@@ -1,0 +1,311 @@
+# Planificador por presupuesto: widget embebible (no burbuja) donde el
+# visitante indica cuanto quiere invertir y va creando opciones valoradas con
+# precios reales del ERP (cargos, ganancia, IVA y redondeo dentro del total).
+#
+# Cada planificador es un canal (`channels.kind = 'planner'`, `account_ref =
+# 'planner:{llave}'`): asi la conversacion de la fase 2 reutiliza turnos,
+# historial, costos y asignacion de agente como el chat web.
+#
+# planner_sessions: una por visitante, con vencimiento (retencion del widget,
+# contada desde la ultima actividad). Sus opciones y eventos caen en cascada.
+# planner_options: A, B, C… nunca se borran dentro de la sesion; cada cambio
+# crea una nueva con su padre. El semaforo NO se guarda: sale del total y del
+# presupuesto vigente al leer.
+# planner_events: lo que el visitante hizo (presupuestos, tipos, opciones), para
+# el asesor y para medir.
+databaseChangeLog:
+
+  - changeSet:
+      id: 210-channels-kind-planner
+      author: stackline
+      comment: El tipo de canal admite 'planner'.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE channels DROP CONSTRAINT ck_channels_kind;
+              ALTER TABLE channels ADD CONSTRAINT ck_channels_kind CHECK (kind IN ('whatsapp', 'erp', 'api', 'web', 'planner'));
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM channel_agents WHERE channel_id IN (SELECT id FROM channels WHERE kind = 'planner');
+              DELETE FROM channels WHERE kind = 'planner';
+              ALTER TABLE channels DROP CONSTRAINT ck_channels_kind;
+              ALTER TABLE channels ADD CONSTRAINT ck_channels_kind CHECK (kind IN ('whatsapp', 'erp', 'api', 'web'));
+
+  - changeSet:
+      id: 211-planner-widgets
+      author: stackline
+      comment: Planificadores por presupuesto por empresa (configuracion de negocio).
+      changes:
+        - createTable:
+            tableName: planner_widgets
+            columns:
+              - column:
+                  name: channel_id
+                  type: BIGINT
+                  constraints: { primaryKey: true, nullable: false, foreignKeyName: fk_planner_widgets_channel, references: 'channels(id)', deleteCascade: true }
+              - column: { name: tenant_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: name, type: VARCHAR(80), constraints: { nullable: false } }
+              - column: { name: public_key, type: VARCHAR(40), constraints: { nullable: false, unique: true, uniqueConstraintName: uq_planner_widgets_key } }
+              - column: { name: allowed_origins, type: JSONB, defaultValueComputed: "'[]'::jsonb", constraints: { nullable: false } }
+              - column: { name: title, type: VARCHAR(60) }
+              - column: { name: accent_color, type: VARCHAR(7) }
+              - column: { name: lang, type: VARCHAR(2), defaultValue: es, constraints: { nullable: false } }
+              # [{code, label, productId}] en el orden en que se muestran.
+              - column: { name: project_types, type: JSONB, defaultValueComputed: "'[]'::jsonb", constraints: { nullable: false } }
+              # "Justo": el total pasa de este % del presupuesto sin pasarse de el.
+              - column: { name: fit_threshold_pct, type: 'NUMERIC(5,2)', defaultValueNumeric: 90, constraints: { nullable: false } }
+              - column: { name: renders_per_day, type: INT, defaultValueNumeric: 5, constraints: { nullable: false } }
+              - column: { name: retention_days, type: INT, defaultValueNumeric: 7, constraints: { nullable: false } }
+              - column: { name: max_options, type: INT, defaultValueNumeric: 10, constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: |
+              ALTER TABLE planner_widgets ADD CONSTRAINT ck_planner_widgets_fit CHECK (fit_threshold_pct >= 50 AND fit_threshold_pct <= 100);
+              ALTER TABLE planner_widgets ADD CONSTRAINT ck_planner_widgets_renders CHECK (renders_per_day BETWEEN 0 AND 50);
+              ALTER TABLE planner_widgets ADD CONSTRAINT ck_planner_widgets_retention CHECK (retention_days BETWEEN 1 AND 90);
+              ALTER TABLE planner_widgets ADD CONSTRAINT ck_planner_widgets_options CHECK (max_options BETWEEN 1 AND 26);
+        - createIndex:
+            tableName: planner_widgets
+            indexName: ix_planner_widgets_tenant
+            columns:
+              - column: { name: tenant_id }
+      rollback:
+        - dropTable: { tableName: planner_widgets }
+
+  - changeSet:
+      id: 212-planner-sessions
+      author: stackline
+      comment: Sesiones del planificador (una por visitante), con vencimiento.
+      changes:
+        - createTable:
+            tableName: planner_sessions
+            columns:
+              # ps_ + 32 al azar: saberlo es la llave para verla.
+              - column: { name: id, type: VARCHAR(40), constraints: { primaryKey: true, nullable: false } }
+              - column:
+                  name: channel_id
+                  type: BIGINT
+                  constraints: { nullable: false, foreignKeyName: fk_planner_sessions_channel, references: 'channels(id)', deleteCascade: true }
+              - column: { name: tenant_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: budget, type: 'NUMERIC(14,2)' }
+              - column: { name: project_type, type: VARCHAR(40) }
+              # Detalles que no cambian el precio (uso, notas): {clave: valor}.
+              - column: { name: notes, type: JSONB, defaultValueComputed: "'{}'::jsonb", constraints: { nullable: false } }
+              - column: { name: active_letter, type: VARCHAR(2) }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: last_activity_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: expires_at, type: TIMESTAMPTZ, constraints: { nullable: false } }
+        - createIndex:
+            tableName: planner_sessions
+            indexName: ix_planner_sessions_expires
+            columns:
+              - column: { name: expires_at }
+        - createIndex:
+            tableName: planner_sessions
+            indexName: ix_planner_sessions_channel
+            columns:
+              - column: { name: channel_id }
+              - column: { name: created_at }
+      rollback:
+        - dropTable: { tableName: planner_sessions }
+
+  - changeSet:
+      id: 213-planner-options
+      author: stackline
+      comment: Opciones valoradas de cada sesion (A, B, C…), con su configuracion y precio.
+      changes:
+        - createTable:
+            tableName: planner_options
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column:
+                  name: session_id
+                  type: VARCHAR(40)
+                  constraints: { nullable: false, foreignKeyName: fk_planner_options_session, references: 'planner_sessions(id)', deleteCascade: true }
+              - column: { name: letter, type: VARCHAR(2), constraints: { nullable: false } }
+              - column: { name: parent_letter, type: VARCHAR(2) }
+              - column: { name: project_type, type: VARCHAR(40), constraints: { nullable: false } }
+              - column: { name: title, type: VARCHAR(120), constraints: { nullable: false } }
+              - column: { name: summary, type: VARCHAR(200) }
+              # productId, templateId, params, choices, preset, quantity: con esto se vuelve a valorar.
+              - column: { name: spec, type: JSONB, constraints: { nullable: false } }
+              - column: { name: details, type: JSONB, defaultValueComputed: "'[]'::jsonb", constraints: { nullable: false } }
+              - column: { name: pricing, type: VARCHAR(12), constraints: { nullable: false } }
+              # Total al cliente (cargos, ganancia, IVA y redondeo dentro). Subtotal e IVA son internos.
+              - column: { name: total, type: 'NUMERIC(14,2)' }
+              - column: { name: subtotal, type: 'NUMERIC(14,2)' }
+              - column: { name: tax, type: 'NUMERIC(14,2)' }
+              # Variantes de un cambio, ya valoradas: la sugerencia sale de aqui sin volver al ERP.
+              - column: { name: variants, type: JSONB, defaultValueComputed: "'[]'::jsonb", constraints: { nullable: false } }
+              - column: { name: budget_at_creation, type: 'NUMERIC(14,2)' }
+              - column: { name: priced_at, type: TIMESTAMPTZ, constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: ALTER TABLE planner_options ADD CONSTRAINT ck_planner_options_pricing CHECK (pricing IN ('priced', 'review'));
+        - addUniqueConstraint:
+            tableName: planner_options
+            columnNames: session_id, letter
+            constraintName: uq_planner_options_letter
+      rollback:
+        - dropTable: { tableName: planner_options }
+
+  - changeSet:
+      id: 214-planner-events
+      author: stackline
+      comment: Lo que el visitante hizo en el planificador (para el asesor y para medir).
+      changes:
+        - createTable:
+            tableName: planner_events
+            columns:
+              - column: { name: id, type: BIGSERIAL, constraints: { primaryKey: true, nullable: false } }
+              - column:
+                  name: session_id
+                  type: VARCHAR(40)
+                  constraints: { nullable: false, foreignKeyName: fk_planner_events_session, references: 'planner_sessions(id)', deleteCascade: true }
+              - column: { name: kind, type: VARCHAR(24), constraints: { nullable: false } }
+              - column: { name: data, type: JSONB, defaultValueComputed: "'{}'::jsonb", constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMPTZ, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            sql: >-
+              ALTER TABLE planner_events ADD CONSTRAINT ck_planner_events_kind CHECK (kind IN
+              ('session_started', 'budget_changed', 'type_changed', 'note_changed', 'option_created', 'option_activated'));
+        - createIndex:
+            tableName: planner_events
+            indexName: ix_planner_events_session
+            columns:
+              - column: { name: session_id }
+              - column: { name: id }
+      rollback:
+        - dropTable: { tableName: planner_events }
+
+  # Fase 2: la conversacion. Un tipo de agente propio con las herramientas
+  # planificador.*, como se sembraron ventas y resumen. Su prompt (rol), modelo
+  # y herramientas se editan en la consola; el estado del planificador y el uso
+  # de las herramientas los agrega el codigo en cada turno (PlannerPrompt).
+  # Toma el modelo del tipo ventas; si ventas no existe, no siembra nada.
+  - changeSet:
+      id: 215-planner-agent-type
+      author: stackline
+      comment: Tipo de agente «Planificador por presupuesto» con las herramientas planificador.*.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO ai_prompt_versions (agent_code, version, created_by, body)
+              SELECT 'planificador', 1, 'seed',
+                     'Eres el asistente del planificador de proyectos de la empresa. Ayudas al visitante a convertir su idea ' ||
+                     'en opciones concretas con precio real dentro del monto que quiere invertir: escuchas que quiere, armas ' ||
+                     'la primera opcion enseguida y la ajustas con cada cambio que pida. Hablas en el idioma del visitante, en ' ||
+                     'mensajes cortos y calidos, sin tecnicismos. Nunca inventas precios ni das desglose: solo los totales que ' ||
+                     'te dan las herramientas. Si algo no se puede, lo dices claro y propones una alternativa.'
+              WHERE EXISTS (SELECT 1 FROM ai_agents WHERE code = 'ventas')
+                AND NOT EXISTS (SELECT 1 FROM ai_prompt_versions WHERE agent_code = 'planificador' AND version = 1);
+              INSERT INTO ai_agents (code, name, kind, description, model_id, fallback_model_id, prompt_version_id,
+                                     temperature, max_tool_loops, response_timeout_ms)
+              SELECT 'planificador', 'Planificador por presupuesto', 'conversational',
+                     'Atiende el planificador de la pagina de la empresa: arma opciones valoradas contra el presupuesto del visitante.',
+                     v.model_id, v.fallback_model_id,
+                     (SELECT id FROM ai_prompt_versions WHERE agent_code = 'planificador' AND version = 1),
+                     0.30, 4, 30000
+              FROM ai_agents v
+              WHERE v.code = 'ventas' AND NOT EXISTS (SELECT 1 FROM ai_agents WHERE code = 'planificador');
+              INSERT INTO ai_agent_tools (agent_id, tool_pattern, mode, auto_approve, max_amount)
+              SELECT a.id, 'planificador.*', 'read', TRUE, NULL
+              FROM ai_agents a
+              WHERE a.code = 'planificador'
+                AND NOT EXISTS (SELECT 1 FROM ai_agent_tools t WHERE t.agent_id = a.id AND t.tool_pattern = 'planificador.*');
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM ai_agent_tools WHERE agent_id IN (SELECT id FROM ai_agents WHERE code = 'planificador');
+              DELETE FROM ai_agents WHERE code = 'planificador';
+              DELETE FROM ai_prompt_versions WHERE agent_code = 'planificador';
+
+  # Decision: el tope de renders del planificador es el del playbook del agente
+  # (imagenes.renders_max, «imagenes de ejemplo por cotizacion»), contado por
+  # sesion de planificacion (el prospecto actual), no un tope por visitante y
+  # dia del widget. La columna sobra.
+  - changeSet:
+      id: 216-planner-widgets-sin-renders-por-dia
+      author: stackline
+      comment: El tope de renders sale del playbook, por sesion de planificacion.
+      changes:
+        - dropColumn: { tableName: planner_widgets, columnName: renders_per_day }
+      rollback:
+        - addColumn:
+            tableName: planner_widgets
+            columns:
+              - column: { name: renders_per_day, type: INT, defaultValueNumeric: 5, constraints: { nullable: false } }
+        - sql:
+            sql: ALTER TABLE planner_widgets ADD CONSTRAINT ck_planner_widgets_renders CHECK (renders_per_day BETWEEN 0 AND 50);
+
+  # Fase 3: render bajo pedido. La foto del espacio (opcional) y cada render
+  # viven en web_media con vencimiento, como en el chat web; aqui solo sus ids.
+  # Un render por opcion: se pide con «Ver render» y lo genera la cola de
+  # renders (render_jobs). Los fallidos no cuentan contra el tope del diseño.
+  - changeSet:
+      id: 217-planner-renders
+      author: stackline
+      comment: Foto del espacio de la sesion y render de cada opcion del planificador.
+      changes:
+        - addColumn:
+            tableName: planner_sessions
+            columns:
+              - column: { name: photo_media_id, type: VARCHAR(40) }
+        - addColumn:
+            tableName: planner_options
+            columns:
+              - column: { name: render_job_id, type: BIGINT }
+              - column: { name: render_status, type: VARCHAR(12) }
+              - column: { name: render_media_id, type: VARCHAR(40) }
+        - sql:
+            sql: |
+              ALTER TABLE planner_options ADD CONSTRAINT ck_planner_options_render CHECK (render_status IN ('pending', 'ready', 'failed'));
+              CREATE INDEX ix_planner_options_render_job ON planner_options (render_job_id);
+              ALTER TABLE planner_events DROP CONSTRAINT ck_planner_events_kind;
+              ALTER TABLE planner_events ADD CONSTRAINT ck_planner_events_kind CHECK (kind IN
+                ('session_started', 'budget_changed', 'type_changed', 'note_changed', 'option_created', 'option_activated',
+                 'photo_uploaded', 'render_requested'));
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM planner_events WHERE kind IN ('photo_uploaded', 'render_requested');
+              ALTER TABLE planner_events DROP CONSTRAINT ck_planner_events_kind;
+              ALTER TABLE planner_events ADD CONSTRAINT ck_planner_events_kind CHECK (kind IN
+                ('session_started', 'budget_changed', 'type_changed', 'note_changed', 'option_created', 'option_activated'));
+              DROP INDEX IF EXISTS ix_planner_options_render_job;
+        - dropColumn: { tableName: planner_options, columnName: render_media_id }
+        - dropColumn: { tableName: planner_options, columnName: render_status }
+        - dropColumn: { tableName: planner_options, columnName: render_job_id }
+        - dropColumn: { tableName: planner_sessions, columnName: photo_media_id }
+
+  # Fase 4 (decidida con el cliente): no se crea cotizacion ni prospecto en el
+  # ERP. El visitante toca «Contactar a un asesor» y se abre el WhatsApp de la
+  # empresa con su diseño ya escrito (presupuesto, opcion elegida, otras
+  # opciones y su ultimo render). El numero es de cada planificador.
+  - changeSet:
+      id: 218-planner-contacto-whatsapp
+      author: stackline
+      comment: WhatsApp del asesor de cada planificador y evento de contacto.
+      changes:
+        - addColumn:
+            tableName: planner_widgets
+            columns:
+              # Solo digitos, con codigo de pais (p. ej. 50212345678).
+              - column: { name: contact_whatsapp, type: VARCHAR(20) }
+        - sql:
+            sql: |
+              ALTER TABLE planner_events DROP CONSTRAINT ck_planner_events_kind;
+              ALTER TABLE planner_events ADD CONSTRAINT ck_planner_events_kind CHECK (kind IN
+                ('session_started', 'budget_changed', 'type_changed', 'note_changed', 'option_created', 'option_activated',
+                 'photo_uploaded', 'render_requested', 'contact_requested'));
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM planner_events WHERE kind = 'contact_requested';
+              ALTER TABLE planner_events DROP CONSTRAINT ck_planner_events_kind;
+              ALTER TABLE planner_events ADD CONSTRAINT ck_planner_events_kind CHECK (kind IN
+                ('session_started', 'budget_changed', 'type_changed', 'note_changed', 'option_created', 'option_activated',
+                 'photo_uploaded', 'render_requested'));
+        - dropColumn: { tableName: planner_widgets, columnName: contact_whatsapp }

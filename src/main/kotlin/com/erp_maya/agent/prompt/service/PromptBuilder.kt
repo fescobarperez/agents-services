@@ -35,6 +35,8 @@ class PromptBuilder {
         recientes: List<StoredMessage>,
         entrante: String?,
         playbook: Playbook = Playbook(),
+        /** Lo que el canal agrega en este turno ([ContextoDeCanal]); null si nada. */
+        delCanal: String? = null,
     ): ModelPrompt {
         val partes = mutableListOf<PromptMessage>()
 
@@ -71,6 +73,10 @@ class PromptBuilder {
         // La cotizacion en curso y su checklist, ya calculados por el codigo:
         // el modelo no deduce del historial si hay una abierta ni que falta.
         partes += PromptMessage(Role.SYSTEM, cotizacionEnCurso(estado, playbook))
+
+        // 4b. Lo que el canal tiene en pantalla ahora (p. ej. las opciones del
+        //     planificador, que el visitante tambien cambia con botones).
+        delCanal?.takeIf { it.isNotBlank() }?.let { partes += PromptMessage(Role.SYSTEM, it) }
 
         // 5. La ventana de mensajes, del mas viejo al mas nuevo.
         recientes.takeLast(VENTANA).forEach { m ->

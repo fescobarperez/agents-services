@@ -115,7 +115,17 @@ data class OpenAiPromptDetails(
     @JsonProperty("cached_tokens") val cachedTokens: Int = 0,
 )
 
-/** Respuesta de `POST /images/edits`: la imagen viene en base64. */
+/** `POST /images/generations`: render sin foto base. gpt-image devuelve la imagen en base64. */
+@Serdeable
+data class OpenAiImageGeneration(
+    val model: String,
+    val prompt: String,
+    val size: String,
+    val quality: String,
+    val n: Int = 1,
+)
+
+/** Respuesta de `POST /images/edits` y `/images/generations`: la imagen viene en base64. */
 @Serdeable
 data class OpenAiImageResponse(@Nullable val data: List<OpenAiImageData>? = null)
 
