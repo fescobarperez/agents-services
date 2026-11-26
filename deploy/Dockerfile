@@ -10,9 +10,12 @@ WORKDIR /src
 
 # gradle.properties pide 4 GB para Gradle, pensado para la máquina de
 # desarrollo. En el servidor (2–4 GB en total, con el ERP corriendo al lado)
-# eso tumba la compilación: se baja a 1 GB y Kotlin compila dentro del mismo
-# proceso en vez de levantar un daemon aparte.
-ENV GRADLE_FLAGS="--no-daemon -Dorg.gradle.jvmargs=-Xmx1g -Pkotlin.compiler.execution.strategy=in-process"
+# eso tumba la compilación: se baja y Kotlin compila dentro del mismo proceso
+# en vez de levantar un daemon aparte. Con 1 GB, KSP (procesadores de
+# Micronaut) ya se queda sin heap; el resto lo cubre el swap del servidor.
+# Se puede cambiar sin tocar este archivo: --build-arg GRADLE_XMX=2g.
+ARG GRADLE_XMX=1536m
+ENV GRADLE_FLAGS="--no-daemon -Dorg.gradle.jvmargs=-Xmx${GRADLE_XMX} -Pkotlin.compiler.execution.strategy=in-process"
 
 # La caché de Gradle (~/.gradle) va en un montaje de BuildKit que sobrevive
 # entre despliegues: si Docker descarta la capa de dependencias (prune, cambio
