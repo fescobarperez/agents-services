@@ -9,8 +9,9 @@ name: Deploy
 on:
   workflow_dispatch:
 
-# Comparte grupo con los flujos de los otros repositorios: dos despliegues a
-# la vez sobre el mismo servidor se pisan, vengan de donde vengan.
+# El grupo evita dos despliegues de ESTE repositorio a la vez (en GitHub el
+# grupo es por repositorio). Entre repositorios los ordena el servidor:
+# deploy.sh toma un candado y el segundo espera a que termine el primero.
 concurrency:
   group: deploy-produccion
   cancel-in-progress: false
@@ -21,8 +22,9 @@ jobs:
     # Permite exigir aprobación antes de correr:
     # Settings → Environments → produccion → Required reviewers.
     environment: produccion
-    # Compilar Kotlin en la instancia tarda más que el backend.
-    timeout-minutes: 30
+    # Compilar Kotlin en la instancia tarda más que el backend, y puede tocar
+    # esperar a que termine el despliegue de otro repositorio.
+    timeout-minutes: 50
 
     steps:
       - name: Preparar la clave SSH
@@ -50,10 +52,14 @@ jobs:
           LOG='~/stackline/deploy-agents.log'
           FIN='~/stackline/deploy-agents.exit'
 
-          remoto "rm -f $FIN; nohup bash -c \"~/stackline/stack-line-services/deploy/deploy.sh agents; echo \\\$? > $FIN\" > $LOG 2>&1 < /dev/null &"
+          SCRIPT='~/stackline/deploy-agents.sh'
+
+          # El script sale de origin/main (como en los otros repositorios), no de
+          # la copia del servidor: deploy.sh actualiza ese repositorio mientras corre.
+          remoto "rm -f $FIN; git -C ~/stackline/stack-line-services fetch -q origin main && git -C ~/stackline/stack-line-services show origin/main:deploy/deploy.sh > $SCRIPT && nohup bash -c \"bash $SCRIPT agents; echo \\\$? > $FIN\" > $LOG 2>&1 < /dev/null &"
 
           leidas=0
-          for _ in $(seq 1 110); do   # ~27 min, dentro del timeout del job
+          for _ in $(seq 1 185); do   # ~46 min, dentro del timeout del job
             sleep 15
             if ! salida=$(remoto "tail -n +$((leidas + 1)) $LOG; echo '@@FIN@@'; cat $FIN 2>/dev/null || true"); then
               echo "  (sin conexión con el servidor; se reintenta)"
