@@ -140,9 +140,39 @@ class PromptBuilderTest {
         assertFalse(sistema.contains("Instrucciones de la empresa"))
     }
 
-    private fun contexto(conHerramientas: Boolean = false) = ExecutionContext(
+    @Test
+    fun `el planificador no arrastra el flujo de cotizacion ni pide NIT`() {
+        val prompt = builder.build(contexto(canal = "planner"), SessionState(), emptyList(), "quiero una pergola de 4 por 3")
+        val sistema = prompt.messages.filter { it.role == Role.SYSTEM }.joinToString("\n") { it.content.orEmpty() }
+
+        // Ninguna instruccion de pedirlo («nombre y NIT», «telefono y NIT», «(y NIT, CF…)»)…
+        assertFalse(sistema.contains("y NIT"), "el planificador no pide NIT")
+        // …y si la de no pedirlo.
+        assertTrue(sistema.contains("no pidas NIT"))
+        assertFalse(sistema.contains("Cotizacion en curso"))
+        assertFalse(sistema.contains("Para enviar una cotizacion"))
+        assertFalse(sistema.contains("cotizacion."), "no menciona herramientas de cotizacion")
+        // Lo que si aplica sigue: el negocio, los limites y el estilo.
+        assertTrue(sistema.contains("No tienes descripcion del negocio"))
+        assertTrue(sistema.contains("No ofrezcas ni negocies descuentos"))
+        assertTrue(sistema.contains("Datos del visitante"))
+        assertTrue(sistema.contains("instrucciones de la empresa"))
+    }
+
+    @Test
+    fun `fuera del planificador el flujo de cotizacion sigue igual`() {
+        val prompt = builder.build(contexto(), SessionState(), emptyList(), "hola")
+        val sistema = prompt.messages.filter { it.role == Role.SYSTEM }.joinToString("\n") { it.content.orEmpty() }
+
+        assertTrue(sistema.contains("NIT"))
+        assertTrue(sistema.contains("Para enviar una cotizacion"))
+        assertTrue(sistema.contains("herramientas cotizacion.*"))
+        assertFalse(sistema.contains("Datos del visitante"))
+    }
+
+    private fun contexto(conHerramientas: Boolean = false, canal: String = "whatsapp") = ExecutionContext(
         tenantId = 1,
-        channel = ChannelRef(1, "whatsapp", "wa:x", Capabilities(buttons = 3, markdown = false, maxChars = 4096)),
+        channel = ChannelRef(1, canal, "wa:x", Capabilities(buttons = 3, markdown = false, maxChars = 4096)),
         agent = AgentRef(1, "ventas", BigDecimal("0.2"), 5, 30000),
         model = ModelRef(1, "openai", "gpt-4o", 128000, true, true),
         fallbackModel = null,
@@ -213,7 +243,8 @@ class PromptBuilderTest {
 
         val alInicio = builder.estilo(Playbook(estilo = Estilo(pedirDatos = Estilo.PEDIR_AL_INICIO)))
         assertTrue(alInicio.contains("al inicio, antes de cotizar"))
-        assertFalse(alInicio.contains("al final"))
+        // «al final» suelto tambien sale en «a lo mas una pregunta, al final»: se busca la regla de los datos.
+        assertFalse(alInicio.contains("NIT (CF si no tiene) al final"))
     }
 
     @Test

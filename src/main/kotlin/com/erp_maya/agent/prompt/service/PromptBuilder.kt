@@ -1,5 +1,6 @@
 package com.erp_maya.agent.prompt.service
 
+import com.erp_maya.agent.channel.planner.PlannerTools
 import com.erp_maya.agent.context.domain.ExecutionContext
 import com.erp_maya.agent.conversation.domain.Direction
 import com.erp_maya.agent.conversation.domain.StoredMessage
@@ -72,7 +73,8 @@ class PromptBuilder {
 
         // La cotizacion en curso y su checklist, ya calculados por el codigo:
         // el modelo no deduce del historial si hay una abierta ni que falta.
-        partes += PromptMessage(Role.SYSTEM, cotizacionEnCurso(estado, playbook))
+        // El planificador no arma cotizaciones: ahi no va.
+        if (!planificador(contexto)) partes += PromptMessage(Role.SYSTEM, cotizacionEnCurso(estado, playbook))
 
         // 4b. Lo que el canal tiene en pantalla ahora (p. ej. las opciones del
         //     planificador, que el visitante tambien cambia con botones).
@@ -129,12 +131,19 @@ class PromptBuilder {
         }
         // Los montos los calcula el ERP (impuesto, redondeo, descuentos). Un
         // total que el modelo saca de cabeza termina contradiciendo al PDF.
-        append(
-            " Montos: nunca calcules subtotales, impuestos ni totales. Antes de crear la cotizacion menciona solo " +
-                "precio unitario y cantidad; despues repite exactamente las lineas y montos que devuelvan las " +
-                "herramientas cotizacion.*.",
-        )
+        // En el planificador los totales los dan sus herramientas (ver su contexto).
+        if (!planificador(contexto)) {
+            append(
+                " Montos: nunca calcules subtotales, impuestos ni totales. Antes de crear la cotizacion menciona solo " +
+                    "precio unitario y cantidad; despues repite exactamente las lineas y montos que devuelvan las " +
+                    "herramientas cotizacion.*.",
+            )
+        }
     }
+
+    /** El planificador de la pagina: arma opciones con precio, no cotizaciones (decidido con el cliente). */
+    private fun planificador(contexto: ExecutionContext): Boolean =
+        contexto.channel.kind.equals(PlannerTools.CANAL, ignoreCase = true)
 
     private fun negocio(contexto: ExecutionContext, playbook: Playbook): String = buildString {
         val n = playbook.negocio
@@ -161,17 +170,28 @@ class PromptBuilder {
         ).append('\n')
 
         val l = playbook.limites
+        val enPlanificador = planificador(contexto)
         append("Limites:\n")
-        if (l.soloTotal && playbook.audiencia(contexto.channel.kind) != Playbook.AUDIENCIA_VENDEDOR) {
+        if (!enPlanificador && l.soloTotal && playbook.audiencia(contexto.channel.kind) != Playbook.AUDIENCIA_VENDEDOR) {
             append("- Precios: no digas precios de catalogo ni por linea. Agrega lo que pide a la cotizacion y da solo el total que devuelve el sistema, como estimado que confirma un asesor.\n")
         }
         append("- Productos con madeToOrder=true se fabrican bajo pedido: no hables de existencias ni de disponibilidad; menciona el tiempo de entrega del negocio.\n")
         if (!l.puedeOfrecerDescuentos) append("- No ofrezcas ni negocies descuentos; si los piden, un agente de ventas lo atendera.\n")
-        l.montoMaximo?.let { append("- Cotizaciones por encima de Q ").append(it.toPlainString()).append(" se envian igual (PDF preliminar); el agente de ventas las revisa con prioridad.\n") }
-        l.lineasMaximas?.let { append("- Maximo ").append(it).append(" productos distintos por cotizacion.\n") }
+        if (!enPlanificador) {
+            l.montoMaximo?.let { append("- Cotizaciones por encima de Q ").append(it.toPlainString()).append(" se envian igual (PDF preliminar); el agente de ventas las revisa con prioridad.\n") }
+            l.lineasMaximas?.let { append("- Maximo ").append(it).append(" productos distintos por cotizacion.\n") }
+        }
         if (l.fueraDeAlcance.isNotEmpty()) {
             append("- No resuelves: ").append(l.fueraDeAlcance.joinToString(", "))
                 .append(". Si lo piden, di que un agente de ventas le dara seguimiento.\n")
+        }
+
+        // El planificador no arma cotizaciones: el ciclo de la cotizacion, sus
+        // datos requeridos y sus confirmaciones no aplican. Lo que pide al
+        // visitante lo dicen las instrucciones de la empresa para ese agente.
+        if (enPlanificador) {
+            append(estilo(playbook, planificador = true))
+            return@buildString
         }
 
         val c = playbook.cotizacion
@@ -239,7 +259,7 @@ class PromptBuilder {
      * van siempre: un cliente nunca deberia leer sobre errores del sistema ni
      * que le ofrezcan algo que despues no se puede hacer.
      */
-    internal fun estilo(playbook: Playbook): String = buildString {
+    internal fun estilo(playbook: Playbook, planificador: Boolean = false): String = buildString {
         val e = playbook.estilo
         append("Estilo de tus mensajes (prevalece sobre la costumbre de explicar de mas):\n")
         append(
@@ -258,16 +278,29 @@ class PromptBuilder {
         append("- Conversa como un asesor de la tienda: responde a lo que dijo el cliente y pregunta lo siguiente. No narres lo que haces, ")
         append("lo que aun no has hecho ni por que necesitas un dato (\"todavia no he registrado nada\", \"para darle el precio necesito ")
         append("armar la cotizacion\"). Ejemplo: si pide una pergola, \"¡Con gusto! ¿Qué medidas tiene el espacio donde la quiere?\"\n")
-        if (e.pedirDatos.equals(Estilo.PEDIR_AL_INICIO, ignoreCase = true)) {
-            append("- Datos del cliente: pide nombre y NIT (CF si no tiene) al inicio, antes de cotizar, en una sola pregunta corta.\n")
-        } else {
-            append("- Datos del cliente: primero entiende que quiere (producto, medidas, material) y anotalo con cotizacion.agregar, que lo ")
-            append("guarda en espera aunque aun no haya cliente. Pide nombre, telefono y NIT (CF si no tiene) al final: cuando ya este ")
-            append("definido lo que lleva, o si pide el total o el PDF. En una sola pregunta corta, sin explicar para que.\n")
+        when {
+            // El planificador no cotiza: el NIT y la facturacion los ve el asesor despues.
+            planificador -> {
+                append("- Datos del visitante: no pidas NIT, CF, direccion ni datos de facturacion. Lo que preguntes es para entender ")
+                append("su idea (medidas, material, estilo), sin insistir. Pide datos de contacto solo como lo indiquen las ")
+                append("instrucciones de la empresa; si no dicen nada, no los pidas.\n")
+            }
+            e.pedirDatos.equals(Estilo.PEDIR_AL_INICIO, ignoreCase = true) -> {
+                append("- Datos del cliente: pide nombre y NIT (CF si no tiene) al inicio, antes de cotizar, en una sola pregunta corta.\n")
+            }
+            else -> {
+                append("- Datos del cliente: primero entiende que quiere (producto, medidas, material) y anotalo con cotizacion.agregar, que lo ")
+                append("guarda en espera aunque aun no haya cliente. Pide nombre, telefono y NIT (CF si no tiene) al final: cuando ya este ")
+                append("definido lo que lleva, o si pide el total o el PDF. En una sola pregunta corta, sin explicar para que.\n")
+            }
         }
         append("- Nunca hables del sistema ni de errores (\"no quedo registrado\", \"el sistema no me lo permitio\"). Di que sigue, en positivo.\n")
-        append("- No ofrezcas una accion que no puedes hacer con tus herramientas. Si algo no lo puedes resolver, di que un asesor le escribe por aqui; ")
-        append("nunca le pidas que contacte a la empresa: ya esta hablando con ella.\n")
+        if (planificador) {
+            append("- No ofrezcas una accion que no puedes hacer con tus herramientas. Si algo no lo puedes resolver, dilo claro y sigue con lo que si puedes armar.\n")
+        } else {
+            append("- No ofrezcas una accion que no puedes hacer con tus herramientas. Si algo no lo puedes resolver, di que un asesor le escribe por aqui; ")
+            append("nunca le pidas que contacte a la empresa: ya esta hablando con ella.\n")
+        }
         e.instrucciones?.takeIf { it.isNotBlank() }?.let { append("- ").append(it.trim()).append('\n') }
     }
 
