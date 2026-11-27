@@ -173,7 +173,8 @@ open class AgentLoop(
                         c
                     }
                 }
-                log.info("conversation={} herramienta {} args={}", conversationId, call.name, call.arguments)
+                // Sin datos personales: nombre, telefono, NIT, correo y lo que el cliente dijo con sus palabras.
+                log.info("conversation={} herramienta {} args={}", conversationId, call.name, ArgumentosEnLog.de(call.arguments))
                 val resultado = if (call.name == ToolCatalog.STICKER) {
                     // No toca ningun sistema: deja la expresion en el turno y
                     // el canal decide como pintarla. Una por turno.
