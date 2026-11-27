@@ -525,7 +525,7 @@ open class PlannerService(
     private fun vence(w: PlannerWidget): Instant = Instant.now().plus(w.retentionDays.toLong().coerceAtLeast(1), ChronoUnit.DAYS)
 
     private fun maximo(w: PlannerWidget) =
-        WebException(409, "MAX_OPTIONS", "Llegaste al máximo de ${w.maxOptions} opciones. Vuelve a una de las que ya tienes.")
+        WebException(409, "MAX_OPTIONS", "Llegaste al máximo de ${w.maxOptions} cambios en este diseño. Toca «Empezar de nuevo» para armar otro.")
 
     /** El ERP caido no es culpa del visitante: 502 y un mensaje para reintentar. */
     private fun <T> conErp(llamada: () -> T): T = try {

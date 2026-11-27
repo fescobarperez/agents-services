@@ -37,30 +37,32 @@
       title: 'Planificador de proyectos', note: 'Precios totales estimados · un asesor confirma la cotización final',
       budget: '¿Cuánto quieres invertir?', budgetHint: 'Monto total de tu proyecto', project: 'Proyecto',
       details: 'Detalles de tu proyecto', detailsHint: 'Se anotan mientras describes tu idea', remove: 'Quitar',
-      options: 'Tus opciones', optionsFor: 'Tus opciones para {m}', optionsEmpty: 'Tus opciones aparecen aquí cuando describas tu idea.',
+      options: 'Tu propuesta', optionsFor: 'Tu propuesta para {m}', optionsEmpty: 'Tu propuesta aparece aquí cuando describas tu idea.',
       placeholderFirst: 'Cuéntanos tu idea…', placeholder: 'Pide un cambio…',
-      send: 'Enviar', typing: 'Escribiendo…', hello: '¿Qué te gustaría construir? Cuéntame tu idea y armo tu primera opción con precios reales.',
-      noChat: 'Elige el tipo de proyecto y arma tu primera opción; luego prueba los cambios rápidos.', firstOption: 'Armar mi primera opción',
+      placeholderMeasures: 'Medidas (largo × fondo)…', placeholderQty: '¿Cuántas unidades?',
+      send: 'Enviar', typing: 'Escribiendo…', tinoName: 'Tino', online: 'Responde en segundos', hello: '¿Qué te gustaría construir? Cuéntame tu idea y armo tu propuesta con precios reales.',
+      noChat: 'Elige el tipo de proyecto y arma tu propuesta; luego prueba los cambios rápidos.', firstOption: 'Armar mi propuesta',
       fits: 'Encaja · te sobran {m}', tight: 'Justo en tu presupuesto', over: 'Se pasa por {m}', review: 'Un asesor confirma el precio',
-      backTo: 'Para volver a {m}:', backToNo: 'Para acercarte a {m}:', suggestion: 'con «{c}», la opción {l} queda en {t}.', tryIt: 'Probar ese cambio',
-      stillFits: 'La opción {l} sigue encajando.', goBack: 'Volver a la opción {l}', created: 'Listo, armé la opción {l}: {t}. {s}.',
-      createdReview: 'Listo, armé la opción {l}. Un asesor confirma su precio.',
+      backTo: 'Para volver a {m}:', backToNo: 'Para acercarte a {m}:', suggestion: 'con «{c}», tu propuesta queda en {t}.', tryIt: 'Probar ese cambio',
+      created: 'Listo, armé tu propuesta: {t}. {s}.',
+      createdReview: 'Listo, armé tu propuesta. Un asesor confirma su precio.',
       kept: 'Tus diseños se guardan {n} días', renders: '{u} de {n} renders de este diseño',
       contact: 'Contactar a un asesor de ventas', contactHint: 'Se abre WhatsApp con tu diseño ya escrito',
-      reset: 'Empezar de nuevo', resetAsk: '¿Empezar un diseño nuevo? Se borrarán las opciones de esta pantalla.',
+      reset: 'Empezar de nuevo', resetAsk: '¿Empezar un diseño nuevo? Se borrará la propuesta de esta pantalla.',
       error: 'No pude completar eso. Intenta de nuevo.', offline: 'Sin conexión. Revisa tu internet.', wait: 'Vas muy rápido. Intenta en {n} s.',
-      optionLabel: 'Opción {l}', active: 'Opción activa', priceReview: 'Por confirmar',
+      optionLabel: 'Tu propuesta', priceReview: 'Por confirmar',
       photo: 'Foto de tu espacio', photoAdd: 'Sube una foto de tu espacio', photoHint: 'Opcional: el render sale sobre ella',
       photoErr: 'No pude subir la foto. Intenta de nuevo.', photoType: 'Solo fotos JPG, PNG o WEBP.', photoRemove: 'Quitar foto',
-      renderHere: 'Tu render aparece aquí', renderHint: 'Confirma los detalles y toca «Ver render» en una opción.',
-      renderWait: 'Preparando tu render…', renderWaitHint: 'Tarda unos segundos.', renderFail: 'No pude generar el render. Toca «Reintentar» en la opción.',
+      attach: 'Adjuntar una foto de tu espacio',
+      renderHere: 'Tu render aparece aquí', renderHint: 'Confirma los detalles y toca «Ver render» en tu propuesta.',
+      renderWait: 'Preparando tu render…', renderWaitHint: 'Tarda unos segundos.', renderFail: 'No pude generar el render. Toca «Reintentar» en tu propuesta.',
       seeRender: 'Ver render', renderReady: 'Render listo', renderPending: 'Preparando…', retry: 'Reintentar',
-      illustrative: 'Render ilustrativo', renderAlt: 'Render ilustrativo de la opción {l}', noRendersLeft: 'Sin renders',
-      renderNone: 'Ya usaste los {n} renders de este diseño. Puedes seguir ajustando tus opciones; un asesor ve los cambios.',
+      illustrative: 'Render ilustrativo', renderAlt: 'Render ilustrativo de tu propuesta', noRendersLeft: 'Sin renders',
+      renderNone: 'Ya usaste los {n} renders de este diseño. Puedes seguir ajustando tu propuesta; un asesor ve los cambios.',
       loadingProducts: 'Cargando productos…', noProducts: 'Por ahora no hay productos en esta categoría.',
       perUnit: '{p} / {u}', priceTbd: 'Precio por confirmar', measures: 'Medidas de tu espacio',
       length: 'Largo (m)', depth: 'Fondo (m)', qty: 'Cantidad', areaIs: 'Área: {a} m²',
-      build: 'Armar mi opción', rebuild: 'Probar estas medidas', rebuildQty: 'Probar esta cantidad', reference: 'Foto de referencia',
+      build: 'Armar mi propuesta', rebuild: 'Probar estas medidas', rebuildQty: 'Probar esta cantidad', reference: 'Foto de referencia',
       badNumber: 'Escribe medidas mayores que cero.',
       powered: 'Con tecnología de Corvex',
       viewFull: 'Ver imagen completa', close: 'Cerrar', zoomIn: 'Acercar', zoomOut: 'Alejar', fit: 'Ajustar a la pantalla',
@@ -70,30 +72,32 @@
       title: 'Project planner', note: 'Estimated total prices · an advisor confirms the final quote',
       budget: 'How much do you want to invest?', budgetHint: 'Total amount for your project', project: 'Project',
       details: 'Project details', detailsHint: 'They fill in as you describe your idea', remove: 'Remove',
-      options: 'Your options', optionsFor: 'Your options for {m}', optionsEmpty: 'Your options will show up here once you describe your idea.',
+      options: 'Your proposal', optionsFor: 'Your proposal for {m}', optionsEmpty: 'Your proposal will show up here once you describe your idea.',
       placeholderFirst: 'Tell us your idea…', placeholder: 'Ask for a change…',
-      send: 'Send', typing: 'Typing…', hello: 'What would you like to build? Tell me your idea and I will put together your first option with real prices.',
-      noChat: 'Choose the project type and build your first option; then try the quick changes.', firstOption: 'Build my first option',
+      placeholderMeasures: 'Size (length × depth)…', placeholderQty: 'How many?',
+      send: 'Send', typing: 'Typing…', tinoName: 'Tino', online: 'Replies in seconds', hello: 'What would you like to build? Tell me your idea and I will put together your proposal with real prices.',
+      noChat: 'Choose the project type and build your proposal; then try the quick changes.', firstOption: 'Build my proposal',
       fits: 'Fits · {m} to spare', tight: 'Right at your budget', over: '{m} over budget', review: 'An advisor confirms the price',
-      backTo: 'To get back to {m}:', backToNo: 'To get closer to {m}:', suggestion: 'with “{c}”, option {l} comes to {t}.', tryIt: 'Try that change',
-      stillFits: 'Option {l} still fits.', goBack: 'Go back to option {l}', created: 'Done, option {l} is ready: {t}. {s}.',
-      createdReview: 'Done, option {l} is ready. An advisor confirms its price.',
+      backTo: 'To get back to {m}:', backToNo: 'To get closer to {m}:', suggestion: 'with “{c}”, your proposal comes to {t}.', tryIt: 'Try that change',
+      created: 'Done, your proposal is ready: {t}. {s}.',
+      createdReview: 'Done, your proposal is ready. An advisor confirms its price.',
       kept: 'Your designs are kept for {n} days', renders: '{u} of {n} renders for this design',
       contact: 'Contact a sales advisor', contactHint: 'WhatsApp opens with your design already written',
-      reset: 'Start over', resetAsk: 'Start a new design? The options on this screen will be cleared.',
+      reset: 'Start over', resetAsk: 'Start a new design? The proposal on this screen will be cleared.',
       error: 'That did not go through. Please try again.', offline: 'You are offline. Check your connection.', wait: 'Too fast. Try again in {n} s.',
-      optionLabel: 'Option {l}', active: 'Active option', priceReview: 'To be confirmed',
+      optionLabel: 'Your proposal', priceReview: 'To be confirmed',
       photo: 'Photo of your space', photoAdd: 'Upload a photo of your space', photoHint: 'Optional: the render is drawn on it',
       photoErr: 'The photo could not be uploaded. Please try again.', photoType: 'Only JPG, PNG or WEBP photos.', photoRemove: 'Remove photo',
-      renderHere: 'Your render shows up here', renderHint: 'Confirm the details and tap “See render” on an option.',
-      renderWait: 'Preparing your render…', renderWaitHint: 'It takes a few seconds.', renderFail: 'The render could not be made. Tap “Retry” on the option.',
+      attach: 'Attach a photo of your space',
+      renderHere: 'Your render shows up here', renderHint: 'Confirm the details and tap “See render” on your proposal.',
+      renderWait: 'Preparing your render…', renderWaitHint: 'It takes a few seconds.', renderFail: 'The render could not be made. Tap “Retry” on your proposal.',
       seeRender: 'See render', renderReady: 'Render ready', renderPending: 'Preparing…', retry: 'Retry',
-      illustrative: 'Illustrative render', renderAlt: 'Illustrative render of option {l}', noRendersLeft: 'No renders left',
-      renderNone: 'You used the {n} renders for this design. You can keep adjusting your options; an advisor sees the changes.',
+      illustrative: 'Illustrative render', renderAlt: 'Illustrative render of your proposal', noRendersLeft: 'No renders left',
+      renderNone: 'You used the {n} renders for this design. You can keep adjusting your proposal; an advisor sees the changes.',
       loadingProducts: 'Loading products…', noProducts: 'There are no products in this category yet.',
       perUnit: '{p} / {u}', priceTbd: 'Price to be confirmed', measures: 'Your space',
       length: 'Length (m)', depth: 'Depth (m)', qty: 'Quantity', areaIs: 'Area: {a} m²',
-      build: 'Build my option', rebuild: 'Try these measures', rebuildQty: 'Try this quantity', reference: 'Reference photo',
+      build: 'Build my proposal', rebuild: 'Try these measures', rebuildQty: 'Try this quantity', reference: 'Reference photo',
       badNumber: 'Enter measures greater than zero.',
       powered: 'Powered by Corvex',
       viewFull: 'View full image', close: 'Close', zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit to screen',
@@ -165,6 +169,46 @@
     return l > 0.62 ? '#1f1b17' : '#ffffff';
   }
 
+  function mezclar(a, b, t) {
+    var x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16);
+    var c = [16, 8, 0].map(function (s) {
+      var u = (x >> s) & 255, v = (y >> s) & 255;
+      return Math.round(u + (v - u) * t);
+    });
+    return '#' + c.map(function (n) { return (n < 16 ? '0' : '') + n.toString(16); }).join('');
+  }
+
+  /**
+   * Tino de cuerpo completo: el mismo personaje del chat web (widget.js), con
+   * sus colores sacados del color del planificador. `id` distingue el filtro
+   * del halo, porque en la página aparece más de una vez.
+   */
+  function tino(color, id) {
+    var ojo = ACCENT || mezclar(color, '#ffffff', 0.7);
+    var marca = ACCENT ? mezclar(ACCENT, '#000000', 0.25) : color;
+    var contorno = mezclar(color, '#000000', 0.35);
+    var b = 'fill="#ffffff" stroke="' + contorno + '" stroke-width="1.6"';
+    var halo = 'pl-halo-' + id;
+    return '<svg viewBox="-6 -4 76 84" focusable="false" aria-hidden="true">' +
+      '<defs><filter id="' + halo + '" x="-20%" y="-20%" width="140%" height="140%">' +
+      '<feMorphology in="SourceAlpha" operator="dilate" radius="1.6" result="borde"/>' +
+      '<feFlood flood-color="#F6F2EA"/><feComposite in2="borde" operator="in" result="halo"/>' +
+      '<feMerge><feMergeNode in="halo"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>' +
+      '<g filter="url(#' + halo + ')"><g class="t-bob">' +
+      '<rect x="24" y="61" width="6.5" height="13" rx="3.2" ' + b + '/>' +
+      '<rect x="33.5" y="61" width="6.5" height="13" rx="3.2" ' + b + '/>' +
+      '<g class="t-arm t-arm-l"><rect x="15" y="44" width="6" height="16" rx="3" ' + b + '/></g>' +
+      '<g class="t-arm t-arm-r"><g class="t-wave"><rect x="43" y="44" width="6" height="16" rx="3" ' + b + '/></g></g>' +
+      '<rect x="20.5" y="41" width="23" height="22" rx="8.5" ' + b + '/>' +
+      '<path d="M12 4a8 8 0 1 1-8 8V4z" transform="translate(26.5 46.5) scale(.46)" fill="' + marca + '"/>' +
+      '<g class="t-head">' +
+      '<path d="M32 6a20 20 0 1 1-20 20V6z" ' + b + ' stroke-linejoin="round"/>' +
+      '<rect x="18" y="15" width="28" height="20" rx="7" fill="#17151C"/>' +
+      '<rect x="21" y="18" width="5" height="2.2" rx="1.1" fill="#3A3540"/>' +
+      '<circle class="t-eye t-fb t-blink" cx="33" cy="25" r="3.6" fill="' + ojo + '"/>' +
+      '</g></g></g></svg>';
+  }
+
   // ── red ─────────────────────────────────────────────────────────────────
   function pedir(metodo, ruta, cuerpo) {
     var opciones = { method: metodo };
@@ -190,6 +234,10 @@
   }
 
   // ── estilos ─────────────────────────────────────────────────────────────
+  // El mismo clip del chat web (widget.js) para adjuntar la foto del espacio.
+  var CLIP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.4 11.1-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8"/></svg>';
+  // Y el mismo avión de papel para enviar.
+  var SEND = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5 3 10l12 2-12 2z"/></svg>';
   var CSS = [
     // Se aísla de los estilos del sitio salvo la tipografía, para que el bloque se vea de la página.
     ':host{all:initial;display:block;font-family:inherit}',
@@ -203,8 +251,10 @@
     '.head h2{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em}',
     '.head .note{color:var(--muted);font-size:13px}',
     '.reset{background:none;border:0;padding:0;color:var(--muted);font-size:13px;text-decoration:underline;margin-left:12px}',
-    '.body{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2.1fr) minmax(240px,1.15fr)}',
-    '.col{padding:24px;min-width:0}.left{border-right:1px solid var(--line)}.right{border-left:1px solid var(--line)}',
+    // Alto fijo: el bloque no cambia de tamaño con cada mensaje; cada columna hace scroll por dentro.
+    '.body{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2.1fr) minmax(240px,1.15fr);height:640px}',
+    '.col{padding:24px;min-width:0;min-height:0}.left{border-right:1px solid var(--line)}.right{border-left:1px solid var(--line)}',
+    '.left,.right{overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}',
     '.lbl{display:block;margin:0 0 8px;color:var(--c);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}',
     '.money{display:flex;align-items:center;gap:8px;border:2px solid var(--c);border-radius:14px;padding:8px 16px;background:#fff}',
     '.money span{color:var(--c);font-weight:700;font-size:20px}',
@@ -234,8 +284,12 @@
     '.det b{color:var(--c);font-size:11px;letter-spacing:.06em;text-transform:uppercase;min-width:74px}',
     '.det.new b{color:var(--ok)}',
     '.det .x{background:none;border:0;color:var(--muted);font-size:16px;line-height:1;padding:2px 4px}',
-    '.center{display:flex;flex-direction:column;gap:14px}',
-    '.log{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-right:2px}',
+    '.center{display:flex;flex-direction:column;gap:12px;overflow:hidden}',
+    '.center>*{flex:none}',
+    // El chat en su caja: ocupa el resto del alto bajo el render; los mensajes hacen scroll por dentro.
+    '.center>.chat{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:10px;background:var(--soft);border:1px solid var(--line);border-radius:16px;padding:12px}',
+    '.chat>*{flex:none}.alts:empty{display:none}',
+    '.log{display:flex;flex-direction:column;gap:10px;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-right:2px}',
     '.msg{max-width:88%;padding:12px 16px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word}',
     '.msg.me{align-self:flex-end;background:var(--c);color:var(--on);border-bottom-right-radius:6px}',
     '.msg.bot{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:6px}',
@@ -243,21 +297,53 @@
     '.msg .replies{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}',
     '.reply{border:1.5px solid var(--c);background:#fff;color:var(--c);border-radius:999px;padding:7px 16px;font-weight:600;font-size:14px}',
     '.reply:hover:not(:disabled){background:var(--c);color:var(--on)}',
-    '.typing{color:var(--muted);font-size:13px;align-self:flex-start}',
-    '.ask{display:flex;gap:10px}',
-    '.ask textarea{flex:1;min-width:0;resize:none;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font:inherit;color:var(--ink);background:#fff;min-height:48px;max-height:140px;outline:0}',
-    '.ask textarea:focus{border-color:var(--c)}',
-    '.send{border:0;border-radius:12px;background:var(--ink);color:#fff;font-weight:700;padding:0 22px}',
+    // Tino: el encabezado del chat y los tres puntos mientras responde (mismas animaciones del chat web).
+    '.chead{display:flex;align-items:center;gap:10px;padding:0 2px 10px;border-bottom:1px solid var(--line)}',
+    '.chead .tino svg{width:34px;height:38px}',
+    '.chead b{display:block;font-size:14px;line-height:1.2}',
+    '.chead small{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}',
+    ".chead small::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--ok)}",
+    '.tino{line-height:0;flex:none}.tino svg{display:block;overflow:visible}',
+    '.typing{align-self:flex-start;display:flex;align-items:flex-end;gap:8px}',
+    '.typing .tino svg{width:24px;height:27px}',
+    '.dots{background:#fff;border:1px solid var(--line);border-radius:14px;border-bottom-left-radius:4px;padding:10px 12px;display:flex;gap:4px}',
+    '.dots i{width:7px;height:7px;border-radius:50%;background:#b9aeb2;animation:pl-dot 1.2s infinite}',
+    '.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}',
+    '@keyframes pl-dot{0%,60%,100%{transform:none;opacity:.5}30%{transform:translateY(-4px);opacity:1}}',
+    '.t-fb{transform-box:fill-box;transform-origin:center}',
+    '.t-blink{animation:t-blink 4s ease-in-out infinite}',
+    '.t-bob{animation:t-bob 3.2s ease-in-out infinite}',
+    '.t-head{transform-box:view-box;transform-origin:32px 42px}',
+    '.t-arm{transform-box:view-box}.t-arm-l{transform-origin:18px 47px;transform:rotate(8deg)}.t-arm-r{transform-origin:46px 47px;transform:rotate(-8deg)}',
+    '@keyframes t-blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}',
+    '@keyframes t-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(1.2px)}}',
+    '@media (prefers-reduced-motion:reduce){.t-blink,.t-bob,.dots i{animation:none}}',
+    // Un solo campo, como el chat web: clip, texto y enviar dentro del mismo borde.
+    '.ask{display:flex;align-items:flex-end;gap:4px;border:1px solid var(--line);border-radius:14px;background:#fff;padding:4px}',
+    '.ask:focus-within{border-color:var(--c)}',
+    '.ask textarea{flex:1;min-width:0;resize:none;border:0;padding:10px 6px;font:inherit;color:var(--ink);background:transparent;min-height:40px;max-height:140px;outline:0}',
+    '.ask textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.send{width:40px;height:40px;flex:none;border:0;border-radius:50%;background:var(--c);color:var(--on);display:grid;place-items:center;padding:0}',
+    '.send:disabled{opacity:.45;cursor:default}.send svg{width:18px;height:18px}',
+    '.send:focus-visible{outline:2px solid var(--c);outline-offset:2px}',
+    '.clip{width:40px;height:40px;flex:none;border:0;border-radius:10px;background:transparent;color:var(--muted);display:grid;place-items:center;padding:0}',
+    '.clip:hover:not(:disabled){color:var(--c)}.clip:disabled{opacity:.45;cursor:default}.clip svg{width:22px;height:22px}',
+    '.clip:focus-visible{outline:2px solid var(--c);outline-offset:2px}',
+    '.tray{display:none}.tray.on{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:8px 10px;background:#fff}',
+    '.tray img{width:48px;height:48px;border-radius:8px;object-fit:cover;flex:none}',
+    '.tray b{display:block;font-size:14px}.tray small{color:var(--muted);font-size:13px}',
+    '.tray .x{margin-left:auto;background:none;border:0;color:var(--muted);font-size:18px;padding:4px 6px}',
     '.alts{display:flex;flex-wrap:wrap;gap:8px}',
     '.first{align-self:flex-start;border:0;border-radius:999px;background:var(--c);color:var(--on);font-weight:700;padding:12px 22px}',
     '.empty{color:var(--muted);font-size:14px;border:1px dashed var(--line);border-radius:14px;padding:20px;text-align:center}',
     '.cards{display:flex;flex-direction:column;gap:12px}',
-    '.card{display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;color:var(--ink)}',
-    '.card.on{border:2px solid var(--c);padding:15px;box-shadow:0 6px 18px rgba(31,27,23,.08)}',
-    '.card .top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;align-items:flex-start}',
-    '.card h3{flex:1 1 9em;min-width:0;margin:0;font-size:16px;font-weight:700;line-height:1.3;overflow-wrap:anywhere}',
-    '.card .price{font-weight:700;font-size:17px;white-space:nowrap}',
-    '.card .sum{color:var(--muted);font-size:13px;margin:4px 0 0}',
+    '.card{display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;color:var(--ink)}',
+    '.card.on{border:2px solid var(--c);padding:11px 13px;box-shadow:0 3px 10px rgba(31,27,23,.06)}',
+    '.card .top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px;align-items:baseline}',
+    '.card h3{flex:1 1 9em;min-width:0;margin:0;font-size:15px;font-weight:700;line-height:1.25;overflow-wrap:anywhere}',
+    '.card .price{font-weight:700;font-size:16px;white-space:nowrap}',
+    '.card .sum{color:var(--muted);font-size:12px;margin:2px 0 0}',
+    '.card .bar{height:6px;margin:10px 0 8px}.card .pill{padding:3px 10px;font-size:12px}.card .rbtn{padding:4px 12px;font-size:12px}',
     '.bar{position:relative;height:8px;border-radius:999px;background:var(--grey-bg);margin:14px 0 12px}',
     '.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:999px}',
     '.bar em{position:absolute;top:-6px;bottom:-6px;width:2px;background:var(--ink)}',
@@ -281,9 +367,10 @@
     '.photo img,.photo .ph{width:56px;height:56px;border-radius:10px;object-fit:cover;flex:none;background:linear-gradient(135deg,#dfe7ee,#efe6d8)}',
     '.photo b{display:block;font-size:14px}.photo small{color:var(--muted);font-size:13px}',
     '.photo .x{margin-left:auto;background:none;border:0;color:var(--muted);font-size:18px;padding:4px}',
-    '.render{position:relative;border-radius:18px;overflow:hidden;background:var(--soft);aspect-ratio:16/10;max-height:460px;display:flex;align-items:center;justify-content:center;text-align:center}',
-    '.render.empty{border:1.5px dashed var(--line);background:#f6f1ea;padding:24px}',
-    '.render.empty b{display:block;font-size:17px;margin-bottom:6px}.render.empty span{color:var(--muted);font-size:14px}',
+    // Siempre arriba y de alto fijo, haya render o no: el chat queda debajo sin saltos.
+    '.render{position:relative;border-radius:16px;overflow:hidden;background:var(--soft);height:220px;display:flex;align-items:center;justify-content:center;text-align:center}',
+    '.render.empty{border:1.5px dashed var(--line);background:#f6f1ea;padding:16px}',
+    '.render.empty b{display:block;font-size:16px;margin-bottom:4px}.render.empty span{color:var(--muted);font-size:13px}',
     '.render img{width:100%;height:100%;object-fit:cover;display:block}',
     '.render .badge{position:absolute;top:14px;left:14px;background:#fff;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;display:flex;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.12)}',
     '.render .badge i{width:9px;height:9px;border-radius:50%;display:inline-block}',
@@ -293,16 +380,14 @@
     '.render .tag{position:absolute;right:14px;bottom:14px;background:rgba(31,27,23,.82);color:#fff;border-radius:8px;padding:5px 10px;font-size:12px}',
     '.spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--c);border-radius:50%;margin:0 auto 10px;animation:pl-spin 1s linear infinite}',
     '@keyframes pl-spin{to{transform:rotate(360deg)}}',
-    '.center.con-render .render{order:-1}',
     '.cfoot{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}',
     '.rbtn{border:1.5px solid var(--c);background:#fff;color:var(--c);border-radius:999px;padding:5px 14px;font-weight:700;font-size:13px}',
     '.rbtn.done{border-color:var(--line);color:var(--muted)}',
-    '.card{cursor:pointer}.card:focus-visible{outline:2px solid var(--c);outline-offset:2px}',
     // Una columna en contenedores angostos (el ancho del bloque, no de la ventana):
-    // render y cambios → presupuesto y detalles → opciones → botones.
-    '@container (max-width:819px){.body{grid-template-columns:1fr}.center{order:1}.left{order:2;border-right:0;border-top:1px solid var(--line)}',
+    // chat y render → presupuesto y proyecto → propuesta y detalles → botones.
+    '@container (max-width:819px){.body{grid-template-columns:1fr;height:auto}.left,.right{overflow:visible}.center{order:1;overflow:visible}.left{order:2;border-right:0;border-top:1px solid var(--line)}',
     '.right{order:3;border-left:0;border-top:1px solid var(--line)}.col{padding:20px 16px}.head{padding:18px 16px}',
-    '.foot{flex-direction:column;align-items:stretch;padding:16px}.btns>*{flex:1}.log{max-height:360px}.money input{font-size:26px}}',
+    '.foot{flex-direction:column;align-items:stretch;padding:16px}.btns>*{flex:1}.center>.chat{flex:none}.log{flex:none;height:300px}.money input{font-size:26px}}',
   ].join('');
 
   // ── vista ───────────────────────────────────────────────────────────────
@@ -372,32 +457,66 @@
     ui.types = el('div', 'tipos');
     secTipo.appendChild(ui.types);
     left.appendChild(secTipo);
-    var secDet = el('div', 'sec');
-    secDet.appendChild(el('span', 'lbl', T.details));
-    ui.details = el('div', 'dets');
-    secDet.appendChild(ui.details);
-    secDet.appendChild(el('p', 'hint', T.detailsHint));
-    left.appendChild(secDet);
-    if (config.features && config.features.renders) {
-      // La foto del espacio: base del render (opcional).
-      ui.photo = el('div', 'sec');
+
+    // La foto del espacio: base del render (opcional). Con chat se adjunta con
+    // el clip, como en el chat web; sin chat va debajo de los detalles.
+    var conFoto = !!(config.features && config.features.renders);
+    if (conFoto) {
       ui.file = el('input');
       ui.file.type = 'file';
       ui.file.accept = 'image/jpeg,image/png,image/webp';
       ui.file.className = 'sr';
       ui.file.tabIndex = -1;
       ui.file.addEventListener('change', function () { var f0 = ui.file.files && ui.file.files[0]; ui.file.value = ''; if (f0) subirFoto(f0); });
-      left.appendChild(ui.photo);
-      left.appendChild(ui.file);
     }
 
-    // Centro: conversación, cambios rápidos (y el render, en la fase 3).
+    // Centro, de arriba abajo: el render (haya o no), la conversación, los
+    // cambios rápidos y donde se escribe. Alto fijo: lo que crece es el chat, con scroll.
     var center = el('div', 'col center');
+    ui.center = center;
+    if (config.features && config.features.renders) {
+      ui.render = el('div', 'render empty');
+      ui.render.setAttribute('aria-live', 'polite');
+      center.appendChild(ui.render);
+    }
+    // El chat en su propio contenedor: mensajes, cambios rápidos, foto adjunta y donde se escribe.
+    var chat = el('div', 'chat');
+    center.appendChild(chat);
+    ui.color = color;
+    if (config.chat) {
+      // Con quién habla: Tino, igual que en el chat web.
+      var cab = el('div', 'chead');
+      var fig = el('span', 'tino');
+      fig.innerHTML = tino(color, 'cab');
+      cab.appendChild(fig);
+      var quien = el('span');
+      quien.appendChild(el('b', null, T.tinoName));
+      quien.appendChild(el('small', null, T.online));
+      cab.appendChild(quien);
+      chat.appendChild(cab);
+    }
     ui.log = el('div', 'log');
     ui.log.setAttribute('aria-live', 'polite');
-    center.appendChild(ui.log);
+    chat.appendChild(ui.log);
+    ui.alts = el('div', 'alts');
+    chat.appendChild(ui.alts);
+    if (config.chat && conFoto) {
+      // La foto adjunta, encima de donde se escribe.
+      ui.tray = el('div', 'tray');
+      chat.appendChild(ui.tray);
+    }
     if (config.chat) {
       var ask = el('form', 'ask');
+      if (conFoto) {
+        ui.clip = el('button', 'clip');
+        ui.clip.type = 'button';
+        ui.clip.innerHTML = CLIP;
+        ui.clip.title = T.attach;
+        ui.clip.setAttribute('aria-label', T.attach);
+        ui.clip.addEventListener('click', function () { if (!ocupado) ui.file.click(); });
+        ask.appendChild(ui.clip);
+        ask.appendChild(ui.file);
+      }
       ui.input = el('textarea');
       ui.input.rows = 1;
       ui.input.maxLength = config.maxMessageLength || 600;
@@ -409,26 +528,24 @@
         ui.input.style.height = 'auto';
         ui.input.style.height = Math.min(ui.input.scrollHeight, 140) + 'px';
       });
-      ui.send = el('button', 'send', T.send);
+      ui.send = el('button', 'send');
+      ui.send.innerHTML = SEND;
+      ui.send.title = T.send;
+      ui.send.setAttribute('aria-label', T.send);
       ui.send.type = 'submit';
       ask.addEventListener('submit', function (e) { e.preventDefault(); enviar(); });
       ask.appendChild(ui.input);
       ask.appendChild(ui.send);
-      center.appendChild(ask);
-    }
-    // Medidas (o cantidad) del producto elegido de la lista: arma la opción sin pasar por el chat.
-    ui.medir = el('div');
-    center.appendChild(ui.medir);
-    ui.alts = el('div', 'alts');
-    center.appendChild(ui.alts);
-    ui.center = center;
-    if (config.features && config.features.renders) {
-      ui.render = el('div', 'render empty');
-      ui.render.setAttribute('aria-live', 'polite');
-      center.appendChild(ui.render);
+      chat.appendChild(ask);
+    } else {
+      // Sin chat, las medidas (o la cantidad) del producto elegido se escriben
+      // aquí y arman la propuesta. Con chat se dicen en la conversación.
+      ui.medir = el('div');
+      center.appendChild(ui.medir);
     }
 
-    // Derecha: las opciones con su semáforo.
+    // Derecha: una sola propuesta (la activa) con su semáforo y, debajo, los
+    // detalles del proyecto. Las versiones anteriores no se muestran.
     var right = el('div', 'col right');
     ui.optionsTitle = el('span', 'lbl');
     right.appendChild(ui.optionsTitle);
@@ -436,6 +553,17 @@
     right.appendChild(ui.cards);
     ui.tip = el('div');
     right.appendChild(ui.tip);
+    var secDet = el('div', 'sec');
+    secDet.appendChild(el('span', 'lbl', T.details));
+    ui.details = el('div', 'dets');
+    secDet.appendChild(ui.details);
+    secDet.appendChild(el('p', 'hint', T.detailsHint));
+    right.appendChild(secDet);
+    if (conFoto && !config.chat) {
+      ui.photo = el('div', 'sec');
+      right.appendChild(ui.photo);
+      right.appendChild(ui.file);
+    }
 
     body.appendChild(left);
     body.appendChild(center);
@@ -505,6 +633,26 @@
   function url(ruta) { return BASE + ruta; }
 
   function pintarFoto() {
+    if (ui.clip) ui.clip.disabled = ocupado;
+    if (ui.tray) {
+      // Con chat: la foto adjunta, como un adjunto del mensaje.
+      ui.tray.textContent = '';
+      ui.tray.className = 'tray' + (estado.photo ? ' on' : '');
+      if (!estado.photo) return;
+      var mini = el('img');
+      mini.src = url(estado.photo.url);
+      mini.alt = '';
+      ui.tray.appendChild(mini);
+      var dice = el('span');
+      dice.appendChild(el('b', null, T.photo));
+      dice.appendChild(el('small', null, T.photoHint));
+      ui.tray.appendChild(dice);
+      var quitar = boton('x', '×', function () { if (!ocupado) quitarFoto(); });
+      quitar.setAttribute('aria-label', T.photoRemove);
+      quitar.disabled = ocupado;
+      ui.tray.appendChild(quitar);
+      return;
+    }
     if (!ui.photo) return;
     ui.photo.textContent = '';
     ui.photo.appendChild(el('span', 'lbl', T.photo));
@@ -541,19 +689,18 @@
     var r = o && o.render;
     ui.render.textContent = '';
     ui.render.className = 'render' + (r && r.status === 'ready' && r.url ? '' : ' empty');
-    ui.center.classList.toggle('con-render', !!(r && r.status !== 'failed'));
     if (r && r.status === 'ready' && r.url) {
       var img = el('img');
       img.src = url(r.url);
-      img.alt = f(T.renderAlt, { l: o.letter });
+      img.alt = T.renderAlt;
       ui.render.appendChild(img);
-      ampliable(img, f(T.optionLabel, { l: o.letter }) + ' · ' + o.title);
+      ampliable(img, T.optionLabel + ' · ' + o.title);
       var b = o.budget || {};
       var badge = el('span', 'badge');
       var punto = el('i');
       punto.style.background = b.status === 'over' ? 'var(--bad)' : b.status === 'tight' ? '#d99a1e' : b.status === 'fits' ? 'var(--ok)' : 'var(--grey)';
       badge.appendChild(punto);
-      badge.appendChild(document.createTextNode(f(T.optionLabel, { l: o.letter }) + (textoEstado(o) ? ' · ' + textoEstado(o) : '')));
+      badge.appendChild(document.createTextNode(T.optionLabel + (textoEstado(o) ? ' · ' + textoEstado(o) : '')));
       ui.render.appendChild(badge);
       ui.render.appendChild(el('span', 'tag', T.illustrative));
       return;
@@ -945,6 +1092,7 @@
    * opción suya en pantalla, «Probar estas medidas» crea otra desde ella.
    */
   function pintarMedidas() {
+    if (!ui.medir) return;
     ui.medir.textContent = '';
     ui.medir.className = '';
     var p = productoElegido();
@@ -1048,17 +1196,32 @@
       }
       ui.log.appendChild(burbuja);
     });
-    if (escribiendo) ui.log.appendChild(el('div', 'typing', T.typing));
+    if (escribiendo) {
+      // Tino con los tres puntos mientras responde.
+      var esc = el('div', 'typing');
+      esc.setAttribute('role', 'status');
+      esc.setAttribute('aria-label', T.typing);
+      var mini = el('span', 'tino');
+      mini.innerHTML = tino(ui.color, 'esc');
+      esc.appendChild(mini);
+      var puntos = el('span', 'dots');
+      for (var k = 0; k < 3; k++) puntos.appendChild(el('i'));
+      esc.appendChild(puntos);
+      ui.log.appendChild(esc);
+    }
     if (aviso) ui.log.appendChild(el('div', 'msg err', aviso));
     if (ui.input) {
-      ui.input.placeholder = estado.options.length ? T.placeholder : T.placeholderFirst;
+      // Eligió un producto de la lista y aún no hay propuesta: que diga sus medidas (o cuántos) en el chat.
+      var elegido = productoElegido();
+      ui.input.placeholder = estado.options.length ? T.placeholder
+        : elegido ? (porArea(elegido.unit) ? T.placeholderMeasures : T.placeholderQty) : T.placeholderFirst;
       ui.input.disabled = ocupado;
       ui.send.disabled = ocupado;
     }
     ui.log.scrollTop = ui.log.scrollHeight;
   }
 
-  /** Cambios de un toque: variantes ya valoradas de la opción activa, o volver a una que encaja. */
+  /** Cambios de un toque, ya valorados: ajustan la propuesta (por dentro es una versión nueva). */
   function pintarCambios() {
     ui.alts.textContent = '';
     var o = activa();
@@ -1072,56 +1235,32 @@
       b.disabled = ocupado;
       ui.alts.appendChild(b);
     });
-    var encaja = otraQueEncaja(o);
-    if (encaja) {
-      var v = boton('chip', f(T.goBack, { l: encaja.letter }), function () { activar(encaja.letter); });
-      v.disabled = ocupado;
-      ui.alts.appendChild(v);
-    }
   }
 
-  function otraQueEncaja(o) {
-    if (!o || !o.budget || (o.budget.status !== 'over' && o.budget.status !== 'review')) return null;
-    for (var i = estado.options.length - 1; i >= 0; i--) {
-      var x = estado.options[i];
-      if (x.letter !== o.letter && x.budget && (x.budget.status === 'fits' || x.budget.status === 'tight')) return x;
-    }
-    return null;
-  }
-
+  /** Una sola propuesta: la activa. Las versiones anteriores quedan en la sesión, no en pantalla. */
   function pintarOpciones() {
     ui.optionsTitle.textContent = estado.budget != null ? f(T.optionsFor, { m: dinero(estado.budget) }) : T.options;
     ui.cards.textContent = '';
     ui.tip.textContent = '';
     ui.tip.className = '';
-    if (!estado.options.length) { ui.cards.appendChild(el('div', 'empty', T.optionsEmpty)); return; }
     var o = activa();
-    // La más nueva arriba: es la que el visitante acaba de pedir.
-    estado.options.slice().reverse().forEach(function (x) { ui.cards.appendChild(tarjeta(x, o && x.letter === o.letter)); });
-    if (o && o.budget && o.budget.status === 'over' && o.suggestion && estado.budget != null) {
+    if (!o) { ui.cards.appendChild(el('div', 'empty', T.optionsEmpty)); return; }
+    ui.cards.appendChild(tarjeta(o));
+    if (o.budget && o.budget.status === 'over' && o.suggestion && estado.budget != null) {
       ui.tip.className = 'tip';
       var s = o.suggestion;
       ui.tip.appendChild(el('b', null, f(s.fits ? T.backTo : T.backToNo, { m: dinero(estado.budget) }) + ' '));
-      ui.tip.appendChild(document.createTextNode(f(T.suggestion, { c: s.label, l: o.letter, t: dinero(s.total) })));
-      var otra = otraQueEncaja(o);
-      if (otra) ui.tip.appendChild(document.createTextNode(' ' + f(T.stillFits, { l: otra.letter })));
+      ui.tip.appendChild(document.createTextNode(f(T.suggestion, { c: s.label, t: dinero(s.total) })));
       ui.tip.appendChild(el('br'));
       ui.tip.appendChild(boton(null, T.tryIt, function () { crearOpcion({ from: o.letter, choices: s.change }); }));
     }
   }
 
-  function tarjeta(o, esActiva) {
-    // Un bloque clicable (no un <button>): adentro va el botón del render.
-    var c = el('div', 'card' + (esActiva ? ' on' : ''));
-    c.setAttribute('role', 'button');
-    c.tabIndex = 0;
-    c.setAttribute('aria-pressed', esActiva ? 'true' : 'false');
-    var elegir = function () { if (!esActiva && !ocupado) activar(o.letter); };
-    c.addEventListener('click', elegir);
-    c.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); elegir(); } });
-    c.setAttribute('aria-label', f(T.optionLabel, { l: o.letter }) + ': ' + o.title + (esActiva ? ' · ' + T.active : ''));
+  function tarjeta(o) {
+    var c = el('div', 'card on');
+    c.setAttribute('aria-label', T.optionLabel + ': ' + o.title);
     var top = el('div', 'top');
-    top.appendChild(el('h3', null, o.letter + ' · ' + o.title));
+    top.appendChild(el('h3', null, o.title));
     top.appendChild(el('span', 'price', o.total != null ? dinero(o.total) : T.priceReview));
     c.appendChild(top);
     if (o.summary) c.appendChild(el('p', 'sum', o.summary));
@@ -1229,8 +1368,8 @@
         var o = activa();
         if (o) {
           local.messages.push({ from: 'bot', text: o.total != null
-            ? f(T.created, { l: o.letter, t: dinero(o.total), s: textoEstado(o) })
-            : f(T.createdReview, { l: o.letter }) });
+            ? f(T.created, { t: dinero(o.total), s: textoEstado(o) })
+            : T.createdReview });
           guardar();
         }
       });
